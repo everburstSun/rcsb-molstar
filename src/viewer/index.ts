@@ -13,7 +13,7 @@ import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
 import { ViewerState, CollapsedState, ModelUrlProvider } from './types';
 import { PluginSpec } from 'molstar/lib/mol-plugin/spec';
 
-import { ColorNames } from 'molstar/lib/mol-util/color/names';
+import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import * as React from 'react';
 
 import { ModelLoader } from './helpers/model';
@@ -29,8 +29,8 @@ import { ObjectKeys } from 'molstar/lib/mol-util/type-helpers';
 import { PluginLayoutControlsDisplay } from 'molstar/lib/mol-plugin/layout';
 import { SuperposeColorThemeProvider } from './helpers/superpose/color';
 import { NakbColorThemeProvider } from './helpers/nakb/color';
-import { setFocusFromRange, removeComponent, clearSelection, createComponent, select } from './helpers/viewer';
-import { SelectBase, SelectRange, SelectTarget, Target } from './helpers/selection';
+import { setFocusFromTargets, removeComponent, clearSelection, createComponent, select, createBoundingBox } from './helpers/viewer';
+import { SelectBase, SelectTarget, Target } from './helpers/selection';
 import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { DefaultPluginUISpec, PluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
 import { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
@@ -317,8 +317,8 @@ export class Viewer {
         return exportHierarchy(this.plugin, options);
     }
 
-    setFocus(target: SelectRange) {
-        setFocusFromRange(this._plugin, target);
+    setFocus(targets: SelectTarget | SelectTarget[], focus = false) {
+        setFocusFromTargets(this._plugin, targets, focus);
     }
 
     clearFocus(): void {
@@ -339,6 +339,10 @@ export class Viewer {
 
     async removeComponent(componentLabel: string) {
         await removeComponent(this._plugin, componentLabel);
+    }
+
+    async createBoundingBox(label: string, min: number[], max: number[], radius: number, color: ColorName) {
+        await createBoundingBox(this._plugin, label, min, max, radius, color);
     }
 }
 
