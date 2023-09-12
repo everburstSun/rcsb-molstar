@@ -342,7 +342,13 @@ export class Viewer {
     }
 
     async createBoundingBox(label: string, min: number[], max: number[], radius: number, color: ColorName) {
-        await createBoundingBox(this._plugin, label, min, max, radius, color);
+        const ref = await createBoundingBox(this._plugin, label, min, max, radius, color);
+        return ref;
+    }
+
+    removeRef(ref: string) {
+        const state = this._plugin.state.data;
+        PluginCommands.State.RemoveObject(this._plugin, { state, ref: ref });
     }
 }
 

@@ -126,6 +126,7 @@ function toResidues(target: SelectBase | SelectTarget): number[] {
     }
 
     if ('labelSeqId' in target) {
+        if (Array.isArray(target.labelSeqId)) return target.labelSeqId;
         return [target.labelSeqId];
     }
 
@@ -157,5 +158,6 @@ export async function createBoundingBox(plugin: PluginContext, label: string, mi
         color: ColorNames[color]
     })
     await structure.commit();
+    return shapesGroup.ref;
 }
 
