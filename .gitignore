@@ -6,3 +6,4 @@ npm-debug.log
 
 *.sublime-workspace
 .idea
+.DS_Store
