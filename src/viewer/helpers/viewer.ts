@@ -7,35 +7,59 @@
 import { StructureRef } from 'molstar/lib/mol-plugin-state/manager/structure/hierarchy-state';
 import { Structure } from 'molstar/lib/mol-model/structure/structure';
 import { PluginContext } from 'molstar/lib/mol-plugin/context';
-import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder';
-import { Script } from 'molstar/lib/mol-script/script';
-import { StructureSelection } from 'molstar/lib/mol-model/structure/query';
 import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { StructureSelectionQuery } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
 import { StateTransforms } from "molstar/lib/mol-plugin-state/transforms";
 import { CreateBoundingBox } from "./shapes/behavior";
 import {
-    rangeToTest,
     SelectBase,
     SelectRange,
     SelectTarget,
     Target,
     targetToLoci,
-    toRange
+    targetsToExpression,
+    expressionToLoci
 } from './selection';
+
+
+function analyzeTargets(targets: SelectBase | SelectTarget | SelectTarget[]): Target[] {
+    const targetArray = Array.isArray(targets) ? targets : [targets];
+    const result: Target[] = [];
+
+    for (const target of targetArray) {
+        const seqIdKey = 'labelSeqId' in target ? 'labelSeqId' : 'authSeqId';
+        const asymIdKey = 'labelAsymId' in target ? 'labelAsymId' : 'authAsymId';
+        const seqIds = Array.isArray((target as any)[seqIdKey]) ? (target as any)[seqIdKey] : [(target as any)[seqIdKey]];
+        for (const seqId of seqIds) {
+            const resultItem: any = {
+                modelId: target.modelId,
+                operatorName: target.operatorName,
+            };
+            resultItem[asymIdKey] = (target as any)[asymIdKey];
+            if (typeof seqId === 'number') {
+                resultItem[seqIdKey] = seqId;
+            } else if (typeof seqId === 'string') {
+                const pdbxInsCode = seqId.slice(-1);
+                const seqIdNumber = Number(seqId.slice(0, -1));
+                resultItem[seqIdKey] = seqIdNumber;
+                resultItem.pdbxInsCode = pdbxInsCode;
+            }
+            result.push(resultItem);
+        }
+    }
+
+    return result;
+}
 
 export function setFocusFromTargets(plugin: PluginContext, targets: SelectBase | SelectTarget | SelectTarget[], focus = false) {
     const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, Array.isArray(targets) ? targets[0] : targets);
     if (!data) return;
-    const queryList = [];
-    for (const target of (Array.isArray(targets) ? targets : [targets])) {
-        const residues = toResidues(target);
-        const atomGroups = MS.struct.generator.atomGroups(rangeToTest(target.labelAsymId, residues, target.operatorName));
-        queryList.push(atomGroups);
-    }
-    const selection = Script.getStructureSelection(MS.struct.combinator.merge(queryList), data);
-    const loci = StructureSelection.toLociWithSourceUnits(selection);
+
+    const analyzedTargets = analyzeTargets(targets)
+    const expression = targetsToExpression(analyzedTargets);
+    
+    const loci = expressionToLoci(expression, data);
     if (!loci) return;
 
     plugin.managers.camera.focusLoci(loci);
@@ -53,6 +77,8 @@ export function setFocusFromRange(plugin: PluginContext, target: SelectRange) {
 }
 
 function getStructureWithModelId(structures: StructureRef[], target: { modelId: string }): Structure | undefined {
+    if (!target || !target.modelId) return undefined;
+    
     const structureRef = getStructureRefWithModelId(structures, target);
     if (structureRef) return structureRef.cell?.obj?.data;
 }
@@ -69,19 +95,18 @@ export function getStructureRefWithModelId(structures: StructureRef[], target: {
 export function select(plugin: PluginContext, targets: SelectTarget | SelectTarget[], mode: 'select' | 'hover', modifier: 'add' | 'set') {
     if (modifier === 'set')
         clearSelection(plugin, mode);
-    (Array.isArray(targets) ? targets : [targets]).forEach((target, n)=>{
-        const structure = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, target);
-        if (!structure) return;
 
-        const loci = targetToLoci(target, structure);
-        if (!loci) return;
-
-        if (mode === 'hover') {
-            plugin.managers.interactivity.lociHighlights.highlight({ loci });
-        } else if (mode === 'select') {
-            plugin.managers.structure.selection.fromLoci('add', loci);
-        }
-    });
+    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, Array.isArray(targets) ? targets[0] : targets);
+    if (!data) return;
+    const analyzedTargets = analyzeTargets(targets);
+    const expression = targetsToExpression(analyzedTargets);
+    
+    const loci = expressionToLoci(expression, data);
+    if (mode === 'hover') {
+        plugin.managers.interactivity.lociHighlights.highlight({ loci });
+    } else if (mode === 'select') {
+        plugin.managers.structure.selection.fromLoci('add', loci);
+    }
 }
 
 export function clearSelection(plugin: PluginContext, mode: 'select' | 'hover', target?: { modelId: string; } & Target) {
@@ -105,32 +130,15 @@ export function clearSelection(plugin: PluginContext, mode: 'select' | 'hover', 
 export async function createComponent(plugin: PluginContext, componentLabel: string, targets: SelectBase | SelectTarget | SelectTarget[], representationType: StructureRepresentationRegistry.BuiltIn) {
     const structureRef = getStructureRefWithModelId(plugin.managers.structure.hierarchy.current.structures, Array.isArray(targets) ? targets[0] : targets);
     if (!structureRef) throw Error('createComponent error: model not found');
-    const queryList = [];
-    for (const target of (Array.isArray(targets) ? targets : [targets])) {
-        const residues = toResidues(target);
-        const atomGroups = MS.struct.generator.atomGroups(rangeToTest(target.labelAsymId, residues, target.operatorName));
-        queryList.push(atomGroups);
-    }
-    const sel = StructureSelectionQuery('innerQuery_' + Math.random().toString(36).substring(2),
-        MS.struct.combinator.merge(queryList));
+
+    const analyzedTargets = analyzeTargets(targets);
+    const expression = targetsToExpression(analyzedTargets);
+    const sel = StructureSelectionQuery('innerQuery_' + Math.random().toString(36).substring(2), expression);
     await plugin.managers.structure.component.add({
         selection: sel,
         options: { checkExisting: false, label: componentLabel },
         representation: representationType,
     }, [structureRef]);
-}
-
-function toResidues(target: SelectBase | SelectTarget): number[] {
-    if ('labelSeqRange' in target) {
-        return toRange(target.labelSeqRange.beg, target.labelSeqRange.end);
-    }
-
-    if ('labelSeqId' in target) {
-        if (Array.isArray(target.labelSeqId)) return target.labelSeqId;
-        return [target.labelSeqId];
-    }
-
-    return [];
 }
 
 export async function removeComponent(plugin: PluginContext, componentLabel: string) {

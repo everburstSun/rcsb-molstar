@@ -15,8 +15,10 @@ export type Target = {
     // readonly authSeqRange?: Range
     readonly labelSeqId?: number
     readonly labelSeqRange?: Range
+    readonly labelAltId?: string
+    readonly pdbxInsCode?: string
     readonly labelCompId?: string
-    // readonly authAsymId?: string
+    readonly authAsymId?: string
     readonly labelAsymId?: string
     /**
      * Mol*-internal UUID of a model.
@@ -209,7 +211,13 @@ export function targetToLoci(target: Target, structure: Structure): StructureEle
     return StructureSelection.toLociWithSourceUnits(selection);
 }
 
-function targetsToExpression(targets: Target[]): Expression {
+export function expressionToLoci(expression: Expression, structure: Structure): StructureElement.Loci {
+    const query = compile<StructureSelection>(expression);
+    const selection = query(new QueryContext(structure));
+    return StructureSelection.toLociWithSourceUnits(selection);
+}
+
+export function targetsToExpression(targets: Target[]): Expression {
     const expressions = targets.map(t => targetToExpression(t));
     return MS.struct.combinator.merge(expressions);
 }
@@ -229,12 +237,21 @@ function targetToExpression(target: Target): Expression {
     if (target.labelCompId) {
         residueTests.push(MS.core.rel.eq([target.labelCompId, MS.ammp('label_comp_id')]));
     }
+    if (target.labelAltId) {
+        residueTests.push(MS.core.rel.eq([target.labelAltId, MS.ammp('label_alt_id')]));
+    }
+    if (target.pdbxInsCode) {
+        residueTests.push(MS.core.rel.eq([target.pdbxInsCode, MS.ammp('pdbx_PDB_ins_code')]));
+    }
     if (residueTests.length === 1) {
         tests['residue-test'] = residueTests[0];
     } else if (residueTests.length > 1) {
         tests['residue-test'] = MS.core.logic.and(residueTests);
     }
 
+    if (target.authAsymId) {
+        chainTests.push(MS.core.rel.eq([target.authAsymId, MS.ammp('auth_asym_id')]));
+    }
     if (target.labelAsymId) {
         chainTests.push(MS.core.rel.eq([target.labelAsymId, MS.ammp('label_asym_id')]));
     }
