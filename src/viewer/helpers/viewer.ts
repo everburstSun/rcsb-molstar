@@ -11,7 +11,8 @@ import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { StructureSelectionQuery } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
 import { StateTransforms } from "molstar/lib/mol-plugin-state/transforms";
-import { CreateBoundingBox } from "./shapes/behavior";
+import { CreateBoundingBox, CreateSphere } from "./shapes/behavior";
+import { createStructureRepresentationParams } from 'molstar/lib/mol-plugin-state/helpers/structure-representation-params'
 import {
     SelectBase,
     SelectRange,
@@ -139,7 +140,29 @@ export async function createComponent(plugin: PluginContext, componentLabel: str
         options: { checkExisting: false, label: componentLabel },
         representation: representationType,
     }, [structureRef]);
+    // remove all the representation here since we want to create them elsewhere
+    plugin.managers.structure.hierarchy.currentComponentGroups.forEach(c => {
+        for (const comp of c) {
+            if (comp.cell.obj?.label === componentLabel) {
+                plugin.managers.structure.component.removeRepresentations(c);
+                break;
+            }
+        }
+    });
 }
+
+export async function addRepresentation(plugin: PluginContext, componentLabel: string, representationParam: any) {
+    const param = createStructureRepresentationParams(plugin, undefined, representationParam);
+    plugin.managers.structure.hierarchy.currentComponentGroups.forEach(c => {
+        for (const comp of c) {
+            if (comp.cell.obj?.label === componentLabel) {
+                plugin.build().to(comp.cell).apply(StateTransforms.Representation.StructureRepresentation3D, param).commit();
+                break;
+            }
+        }
+    });
+}
+
 
 export async function removeComponent(plugin: PluginContext, componentLabel: string) {
     const out: Promise<void>[] = [];
@@ -155,7 +178,7 @@ export async function removeComponent(plugin: PluginContext, componentLabel: str
     await Promise.all(out);
 }
 
-export async function createBoundingBox(plugin: PluginContext, label: string, min: number[], max: number[], radius: number, color: ColorName) {
+export async function createBoundingBox(plugin: PluginContext, label: string, min: number[], max: number[], radius: number, color: ColorName, alpha?: number) {
     const structure = plugin.build().toRoot();
     const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'BBGroup' })
     shapesGroup.apply(CreateBoundingBox, {
@@ -163,9 +186,24 @@ export async function createBoundingBox(plugin: PluginContext, label: string, mi
         max: max,
         label: label,
         radius: radius,
-        color: ColorNames[color]
+        color: ColorNames[color],
+        alpha: alpha
     })
     await structure.commit();
     return shapesGroup.ref;
 }
 
+export async function createSphere(plugin: PluginContext, label: string, center: number[], radius: number, color: ColorName, alpha?: number, detail?: number) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'SphereGroup' })
+    shapesGroup.apply(CreateSphere, {
+        center: center,
+        radius: radius,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        detail: detail
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}

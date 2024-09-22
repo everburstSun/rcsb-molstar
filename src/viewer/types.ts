@@ -6,8 +6,10 @@
 
 import { BehaviorSubject } from 'rxjs';
 import { ModelLoader } from './helpers/model';
+import { TrajectoryLoader } from './helpers/trajectory';
 import { PluginContext } from 'molstar/lib/mol-plugin/context';
 import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory';
+import { BuiltInCoordinatesFormat } from 'molstar/lib/mol-plugin-state/formats/coordinates';
 
 export type ModelUrlProvider = (pdbId: string) => {
     url: string,
@@ -27,9 +29,16 @@ export interface LoadParams extends SharedParams {
     fileOrUrl: File | string
 }
 
+export interface CoordParams {
+    /** A File object or URL representing a coordinate file  */
+    format: BuiltInCoordinatesFormat,
+    fileOrUrl: File | string,
+    isBinary: boolean
+}
+
 export interface ParseParams extends SharedParams {
     /** string for text data, number[] for binary payload */
-    data: string | number[]
+    data: string | number[] | Uint8Array
 }
 
 export type CollapsedState = {
@@ -59,6 +68,7 @@ export interface ViewerState {
     showValidationReportControls: boolean
 
     modelLoader: ModelLoader
+    trajectoryLoader: TrajectoryLoader
 
     collapsed: BehaviorSubject<CollapsedState>
     detachedFromSierra: boolean

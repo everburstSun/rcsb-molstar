@@ -17,6 +17,7 @@ import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import * as React from 'react';
 
 import { ModelLoader } from './helpers/model';
+import { TrajectoryLoader } from './helpers/trajectory';
 import { PresetProps } from './helpers/preset';
 import { ControlsWrapper } from './ui/controls';
 import { PluginConfig } from 'molstar/lib/mol-plugin/config';
@@ -29,9 +30,9 @@ import { ObjectKeys } from 'molstar/lib/mol-util/type-helpers';
 import { PluginLayoutControlsDisplay } from 'molstar/lib/mol-plugin/layout';
 import { SuperposeColorThemeProvider } from './helpers/superpose/color';
 import { NakbColorThemeProvider } from './helpers/nakb/color';
-import { setFocusFromTargets, removeComponent, clearSelection, createComponent, select, createBoundingBox } from './helpers/viewer';
+import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, createBoundingBox, createSphere } from './helpers/viewer';
 import { SelectBase, SelectTarget, Target } from './helpers/selection';
-import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
+// import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { DefaultPluginUISpec, PluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
 import { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
 import { ANVILMembraneOrientation, MembraneOrientationPreset } from 'molstar/lib/extensions/anvil/behavior';
@@ -197,6 +198,7 @@ export class Viewer {
             showAssemblySymmetryControls: o.showAssemblySymmetryControls,
             showValidationReportControls: o.showValidationReportControls,
             modelLoader: new ModelLoader(this._plugin),
+            trajectoryLoader: new TrajectoryLoader(this._plugin),
             collapsed: new BehaviorSubject<CollapsedState>({
                 selection: true,
                 measurements: true,
@@ -309,6 +311,10 @@ export class Viewer {
         return this.customState.modelLoader.parse({ data, format, isBinary }, config?.props, config?.matrix, config?.reprProvider, config?.params);
     }
 
+    loadTrajectory<P, S>(topoObj: object, coordObj: object, config?: {props?: PresetProps; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
+        return this.customState.trajectoryLoader.load(topoObj, coordObj, config?.props, config?.matrix, config?.reprProvider, config?.params);
+    }
+
     handleResize() {
         this._plugin.layout.events.updated.next(void 0);
     }
@@ -333,16 +339,24 @@ export class Viewer {
         clearSelection(this._plugin, mode, target);
     }
 
-    async createComponent(label: string, targets: SelectBase | SelectTarget | SelectTarget[], representationType: StructureRepresentationRegistry.BuiltIn) {
-        await createComponent(this._plugin, label, targets, representationType);
+    async createComponent(label: string, targets: SelectBase | SelectTarget | SelectTarget[], representationParams: object[]) {
+        await createComponent(this._plugin, label, targets, 'cartoon');
+        for (let param of representationParams) {
+            addRepresentation(this._plugin, label, param);
+        }
     }
 
     async removeComponent(componentLabel: string) {
         await removeComponent(this._plugin, componentLabel);
     }
 
-    async createBoundingBox(label: string, min: number[], max: number[], radius: number, color: ColorName) {
-        const ref = await createBoundingBox(this._plugin, label, min, max, radius, color);
+    async createBoundingBox(label: string, min: number[], max: number[], radius: number, color: ColorName, alpha?: number) {
+        const ref = await createBoundingBox(this._plugin, label, min, max, radius, color, alpha);
+        return ref;
+    }
+
+    async createSphere(label: string, center: number[], radius: number, color: ColorName, alpha?: number, detail?: number) {
+        const ref = await createSphere(this._plugin, label, center, radius, color, alpha, detail);
         return ref;
     }
 

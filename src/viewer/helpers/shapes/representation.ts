@@ -5,104 +5,12 @@ import {Box3D} from 'molstar/lib/mol-math/geometry';
 import {MeshBuilder} from "molstar/lib/mol-geo/geometry/mesh/mesh-builder";
 import {RuntimeContext} from "molstar/lib/mol-task";
 import {addSphere} from "molstar/lib/mol-geo/geometry/mesh/builder/sphere";
-import {addCylinder} from "molstar/lib/mol-geo/geometry/mesh/builder/cylinder";
 import {ShapeRepresentation} from "molstar/lib/mol-repr/shape/representation";
 import {getBoxMesh} from 'molstar/lib/mol-plugin-state/transforms/shape';
 import {Color} from "molstar/lib/mol-util/color/color";
 import {Mesh} from "molstar/lib/mol-geo/geometry/mesh/mesh";
 import {Shape} from "molstar/lib/mol-model/shape/shape";
-import {DefaultCylinderProps} from "molstar/lib/mol-geo/primitive/cylinder";
 
-/* TUBE REPRESENTATION */
-
-interface TubeData {
-  points: number[],
-  size: number
-  index: number
-}
-
-export const TubeParams = {
-  ...Mesh.Params,
-  doubleSided: PD.Boolean(true)
-}
-export type TubeParams = typeof TubeParams;
-export type TubeProps = PD.Values<TubeParams>
-
-const TubeVisuals = {
-  'mesh': (ctx: RepresentationContext, getParams: RepresentationParamsGetter<TubeData, TubeParams>) => ShapeRepresentation(getTubeShape, Mesh.Utils)
-}
-
-function getTubeMesh(data: TubeData, props: TubeProps, mesh?: Mesh) {
-  const builderState = MeshBuilder.createState(512, 256, mesh);
-  //if comment out addSphere, colors and interactivity work correct
-  const points = data.points;
-  for(let i = 0; i < points.length - 5; i+=3) {
-    addSphere(builderState, Vec3.create(points[i], points[i+1], points[i+2]), data.size, 3)
-    addCylinder(builderState,
-        Vec3.create(points[i], points[i+1], points[i+2]),
-        Vec3.create(points[i+3], points[i+4], points[i+5]),
-        1,
-        {...DefaultCylinderProps, radiusTop:data.size, radiusBottom: data.size}
-    )
-  }
-  const last_idx = data.points.length-3;
-  addSphere(builderState, Vec3.create(points[last_idx], points[last_idx+1], points[last_idx+2]), data.size, 3);
-
-  return MeshBuilder.getMesh(builderState);
-}
-
-function getTubeShape(ctx: RuntimeContext, data: TubeData, props: TubeProps, shape?: Shape<Mesh>) {
-    const geo = getTubeMesh(data, props, shape && shape.geometry);
-    return Shape.create(`Tube ${data.index}`, data, geo, () => Color.fromRgb(0, 255, 0), () => data.size, () => `Tube ${data.index}`);
-}
-export type TubeRepresentation = Representation<TubeData, TubeParams>
-
-export function TubeRepresentation(ctx: RepresentationContext, getParams: RepresentationParamsGetter<TubeData, TubeParams>): TubeRepresentation {
-  return Representation.createMulti('Tube', ctx, getParams, Representation.StateBuilder, TubeVisuals as unknown as Representation.Def<TubeData, TubeParams>)
-}
-
-/* SQUARE REPRESENTATION */
-
-interface SquareData {
-  vertices: number[],
-  size: number
-  index: number
-}
-
-export const SquareParams = {
-  ...Mesh.Params,
-  doubleSided: PD.Boolean(true)
-}
-export type SquareParams = typeof SquareParams;
-export type SquareProps = PD.Values<SquareParams>
-
-const SquareVisuals = {
-  'mesh': (ctx: RepresentationContext, getParams: RepresentationParamsGetter<SquareData, SquareParams>) => ShapeRepresentation(getSquareShape, Mesh.Utils)
-}
-
-function getSquareMesh(data: SquareData, props: SquareProps, mesh?: Mesh) {
-  // Here I'm trying to create custom mesh from plain vertices array.
-  // Example array is simple square
-  const state = MeshBuilder.createState(256, 128, mesh);
-  for (let i = 0; i < data.vertices.length-8; i+=9) {
-    MeshBuilder.addTriangle(state,
-      Vec3.create(data.vertices[i], data.vertices[i + 1], data.vertices[i + 2]),
-      Vec3.create(data.vertices[i + 3], data.vertices[i + 4], data.vertices[i + 5]),
-      Vec3.create(data.vertices[i + 6], data.vertices[i + 7], data.vertices[i + 8]),
-    );
-  }
-  return MeshBuilder.getMesh(state);
-}
-
-function getSquareShape(ctx: RuntimeContext, data: SquareData, props: SquareProps, shape?: Shape<Mesh>) {
-    const geo = getSquareMesh(data, props, shape && shape.geometry);
-    return Shape.create(`Square ${data.index}`, data, geo, () => Color.fromRgb(0, 255, 0), () => data.size, () => `Square ${data.index}`);
-}
-export type SquareRepresentation = Representation<SquareData, SquareParams>
-
-export function SquareRepresentation(ctx: RepresentationContext, getParams: RepresentationParamsGetter<SquareData, SquareParams>): SquareRepresentation {
-  return Representation.createMulti('Square', ctx, getParams, Representation.StateBuilder, SquareVisuals as unknown as Representation.Def<SquareData, SquareParams>)
-}
 
 // Bounding Box Representation
 
@@ -125,15 +33,6 @@ const BoxVisuals = {
   'mesh': (ctx: RepresentationContext, getParams: RepresentationParamsGetter<BoxData, BoxParams>) => ShapeRepresentation(getBoxShape, Mesh.Utils)
 }
 
-// function getBoxMesh(data: BoxData, props: BoxProps, mesh?: Mesh) {
-//   const builderState = MeshBuilder.createState(512, 256, mesh);
-//   const bbox = Box3D();
-//   bbox.min = Vec3.create(data.min[0], data.min[1], data.min[2]);
-//   bbox.max = Vec3.create(data.max[0], data.max[1], data.max[2]);
-//   addBoundingBox(builderState, bbox, data.radius, 3 ,8);
-//   return MeshBuilder.getMesh(builderState);
-// }
-
 function getBoxShape(ctx: RuntimeContext, data: BoxData, props: BoxProps, shape?: Shape<Mesh>) {
     const bbox = Box3D();
     bbox.min = Vec3.create(data.min[0], data.min[1], data.min[2]);
@@ -145,4 +44,43 @@ export type BoxRepresentation = Representation<BoxData, BoxParams>
 
 export function BoxRepresentation(ctx: RepresentationContext, getParams: RepresentationParamsGetter<BoxData, BoxParams>): BoxRepresentation {
   return Representation.createMulti('Box', ctx, getParams, Representation.StateBuilder, BoxVisuals as unknown as Representation.Def<BoxData, BoxParams>)
+}
+
+// Sphere Representation
+
+interface SphereData {
+  center: number[],
+  radius: number,
+  label: string,
+  color: Color,
+  detail: number,
+}
+
+export const SphereParams = {
+  ...Mesh.Params,
+  doubleSided: PD.Boolean(true),
+}
+export type SphereParams = typeof SphereParams;
+export type SphereProps = PD.Values<SphereParams>
+
+const SphereVisuals = {
+  'mesh': (ctx: RepresentationContext, getParams: RepresentationParamsGetter<SphereData, SphereParams>) => ShapeRepresentation(getSphereShape, Mesh.Utils)
+}
+
+function getSphereMesh(data: SphereData, props: SphereProps, mesh?: Mesh) {
+  const builderState = MeshBuilder.createState(256, 128, mesh);
+  builderState.currentGroup = 1;
+  addSphere(builderState, Vec3.create(data.center[0], data.center[1], data.center[2]), data.radius, data.detail)
+  return MeshBuilder.getMesh(builderState);
+}
+
+function getSphereShape(ctx: RuntimeContext, data: SphereData, props: SphereProps, shape?: Shape<Mesh>) {
+    const geo = getSphereMesh(data, props, shape?.geometry);
+    return Shape.create(data.label, data, geo, () => data.color, () => data.radius, () => data.label);
+}
+
+export type SphereRepresentation = Representation<SphereData, SphereParams>
+
+export function SphereRepresentation(ctx: RepresentationContext, getParams: RepresentationParamsGetter<SphereData, SphereParams>): SphereRepresentation {
+  return Representation.createMulti('sphere', ctx, getParams, Representation.StateBuilder, SphereVisuals as unknown as Representation.Def<SphereData, SphereParams>)
 }
