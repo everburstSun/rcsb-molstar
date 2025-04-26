@@ -2,6 +2,124 @@
 
 [Semantic Versioning](https://semver.org/)
 
+## [2.11.3] - 2025-04-04
+### General
+- Better handling for motifs in assembly-less entries (RO-4624)
+
+## [2.11.2] - 2025-04-02
+### General
+- Dependency updates
+- React 19 support
+
+## [2.11.2] - 2025-01-27
+### General
+- Dependency updates (RO-4535: PDB-IHM rebranding)
+
+## [2.11.1] - 2024-12-17
+### General
+- Dependency updates
+
+## [2.11.0] - 2024-11-27
+### General
+- Enable Predicted Aligned Error Panel (RO-3593)
+
+## [2.10.6] - 2024-10-28
+### General
+- Dependency & SCSS updates
+
+## [2.10.5] - 2024-10-03
+### General
+- Dependency updates (e.g., higher resolution on mobile)
+
+## [2.10.4] - 2024-09-30
+### General
+- Dependency updates
+- Sequence Viewer: Adjust visuals of unobserved regions (HELP-21475)
+
+## [2.10.3] - 2024-07-01
+### Bug fixes
+- HELP-21267: don't apply pLDDT coloring to experimental structures
+
+## [2.10.2] - 2024-07-01
+### General
+- Dependency updates
+
+## [2.10.1] - 2024-05-22
+### General
+- Update of RSCC statistics (RO-3983)
+
+## [2.10.0] - 2024-05-01
+### Added
+- GlyGen visuals (RO-4259)
+
+## [2.9.4] - 2024-04-16
+### General
+- Dependency updates
+
+## [2.9.3] - 2024-02-28
+### General
+- Adjust superimpose/motif visuals to include ball-and-stick representation of carbohydrates (RO-4202)
+
+## [2.9.2] - 2024-02-26
+### General
+- Dependency update to Mol* v4
+
+## [2.9.1] - 2024-01-24
+### General
+- Dependency update
+
+## [2.9.0] - 2023-12-15
+### Added
+- Ligand Viewer: expose MP4 export
+- Ligand Viewer: toggle state of controls when expanding viewport
+
+## [2.8.3] - 2023-11-06
+### Added
+- Less intrusive tooltips in ligand viewer (RO-4126)
+
+## [2.8.2] - 2023-10-25
+### Added
+- Option to show density as wireframe (RO-4085)
+
+## [2.8.1] - 2023-10-16
+### Bug fixes
+- Fix undesired interaction between settings panel and the panel on the right
+
+## [2.8.0] - 2023-10-02
+### Added
+- Dedicated ligand viewer for the visualization of CCD/BIRD entries
+
+## [2.7.4] - 2023-08-23
+### Added
+- Motif preset: Show global structure
+
+## [2.7.3] - 2023-08-14
+### Added
+- Relaxed strucmotif distance requirement from 15 to 20 A
+
+## [2.7.2] - 2023-07-25
+### Bug fixes
+- Fix detection of CCD files
+
+## [2.7.1] - 2023-06-28
+### Improvement
+- Delegate the responsibility for setting structure label to representation provider, when available
+
+## [2.7.0] - 2023-06-28
+### Added
+- Allow setting a structure label when loading from URL
+
+## [2.6.2] - 2023-06-12
+### General
+- Update dependencies
+
+### Bug fixes
+- Make sure density channels are conditionally hidden (RO-3706)
+
+## [2.6.1] - 2023-05-16
+### General
+- Update dependencies
+
 ## [2.6.0] - 2023-03-15
 ### Added
 - Upload non-archive structures when searching structure motifs (RO-2771)

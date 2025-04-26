@@ -31,6 +31,7 @@ import {
     ResidueSelection,
     uploadStructure
 } from './strucmotif/helpers';
+import { JSX } from 'react';
 
 const ABSOLUTE_ADVANCED_SEARCH_URL = 'https://rcsb.org/search?query=';
 const RELATIVE_ADVANCED_SEARCH_URL = '/search?query=';

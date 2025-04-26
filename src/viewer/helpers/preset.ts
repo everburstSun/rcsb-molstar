@@ -8,7 +8,7 @@ import { PluginContext } from 'molstar/lib/mol-plugin/context';
 import { ParamDefinition as PD } from 'molstar/lib/mol-util/param-definition';
 import { TrajectoryHierarchyPresetProvider } from 'molstar/lib/mol-plugin-state/builder/structure/hierarchy-preset';
 import { ValidationReportGeometryQualityPreset } from 'molstar/lib/extensions/rcsb/validation-report/behavior';
-import { AssemblySymmetryPreset } from 'molstar/lib/extensions/rcsb/assembly-symmetry/behavior';
+import { AssemblySymmetryPreset } from 'molstar/lib/extensions/assembly-symmetry/behavior';
 import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
 import { RootStructureDefinition } from 'molstar/lib/mol-plugin-state/helpers/root-structure';
 import { StructureRepresentationPresetProvider } from 'molstar/lib/mol-plugin-state/builder/structure/representation-preset';
@@ -33,6 +33,7 @@ import {
     VolumeStreamingVisual
 } from 'molstar/lib/mol-plugin/behavior/dynamic/volume-streaming/transformers';
 import {
+    createGlyGenSelectionExpressions,
     createSelectionExpressions,
     normalizeTargets,
     SelectionExpression,
@@ -44,9 +45,9 @@ import { RcsbSuperpositionRepresentationPreset } from './superpose/preset';
 import {
     AssemblySymmetryDataProvider,
     AssemblySymmetryProvider
-} from 'molstar/lib/extensions/rcsb/assembly-symmetry/prop';
+} from 'molstar/lib/extensions/assembly-symmetry/prop';
 import { Task } from 'molstar/lib/mol-task';
-import { PLDDTConfidenceColorThemeProvider } from 'molstar/lib/extensions/model-archive/quality-assessment/color/plddt';
+import { QualityAssessment } from 'molstar/lib/extensions/model-archive/quality-assessment/prop';
 
 type BaseProps = {
     assemblyId?: string
@@ -103,7 +104,8 @@ type FeatureDensityProps = {
     kind: 'feature-density',
     target: Target,
     radius?: number,
-    hiddenChannels?: string[]
+    hiddenChannels?: string[],
+    wireframe?: boolean,
 } & BaseProps
 
 export type MotifProps = {
@@ -117,8 +119,15 @@ export type NakbProps = {
     kind: 'nakb'
 } & BaseProps
 
+export type GlyGenProps = {
+    kind: 'glygen',
+    label?: string,
+    focus: Target,
+    glycosylation: Target[],
+} & BaseProps
+
 export type PresetProps = ValidationProps | StandardProps | SymmetryProps | FeatureProps | DensityProps | AlignmentProps |
-MembraneProps | FeatureDensityProps | MotifProps | NakbProps | EmptyProps;
+MembraneProps | FeatureDensityProps | MotifProps | NakbProps | GlyGenProps | EmptyProps;
 
 const RcsbParams = () => ({
     preset: PD.Value<PresetProps>({ kind: 'standard', assemblyId: '' }, { isHidden: true })
@@ -225,12 +234,21 @@ export const RcsbPreset = TrajectoryHierarchyPresetProvider({
             // TODO should ASM_1 be the default, seems like we'd run into problems when selecting ligands that are e.g. ambiguous with asym_id & seq_id alone?
             const targets = normalizeTargets(p.targets, structure!.obj.data);
             let selectionExpressions = createSelectionExpressions(p.label || model.data!.entryId, targets);
-            const globalExpressions = createSelectionExpressions(p.label || model.data!.entryId); // global reps, to be hidden
-            selectionExpressions = selectionExpressions.concat(globalExpressions.map(e => { return { ...e, isHidden: true }; }));
+            const globalExpressions = createSelectionExpressions(p.label || model.data!.entryId);
+            selectionExpressions = selectionExpressions.concat(globalExpressions.map(e => { return { ...e, alpha: 0.21 }; }));
 
             if (p.color) {
                 selectionExpressions = selectionExpressions.map(e => { return { ...e, color: p.color }; });
             }
+
+            const additions = {
+                ignoreHydrogens: true,
+                quality: CommonParams.quality.defaultValue,
+                selectionExpressions: selectionExpressions
+            };
+            representation = await plugin.builders.structure.representation.applyPreset<any>(structureProperties!, RcsbSuperpositionRepresentationPreset, { ...presetParams, ...additions });
+        } else if (p.kind === 'glygen' && structure?.obj) {
+            const selectionExpressions = createGlyGenSelectionExpressions(p, p.label || model.data!.entryId);
 
             const additions = {
                 ignoreHydrogens: true,
@@ -278,6 +296,7 @@ export const RcsbPreset = TrajectoryHierarchyPresetProvider({
             representation = await plugin.builders.structure.representation.applyPreset(structureProperties!, 'auto', presetParams);
         }
 
+        // TODO align with 'motif'?
         if ((p.kind === 'feature' || p.kind === 'feature-density') && structure?.obj) {
             let loci = targetToLoci(p.target, structure!.obj.data);
             // if requested: then don't force first residue
@@ -294,7 +313,7 @@ export const RcsbPreset = TrajectoryHierarchyPresetProvider({
             const target = chainMode ? loci : StructureElement.Loci.firstResidue(loci);
 
             if (p.kind === 'feature-density') {
-                await initVolumeStreaming(plugin, structure, { overrideRadius: p.radius || 0, hiddenChannels: p.hiddenChannels || ['fo-fc(+ve)', 'fo-fc(-ve)'] });
+                await initVolumeStreaming(plugin, structure, { overrideRadius: p.radius ?? 5, hiddenChannels: p.hiddenChannels ?? [], wireframe: p.wireframe ?? true });
             }
 
             plugin.managers.structure.focus.setFromLoci(target);
@@ -333,7 +352,7 @@ function checkPlddtColorTheme(structure: StructureObject | undefined, plddt: 'on
     if (!structure?.data) return false;
     if (plddt === 'off') return false;
     if (plddt === 'single-chain' && structure.data?.polymerUnitCount !== 1) return false;
-    return PLDDTConfidenceColorThemeProvider.isApplicable({ structure: structure.data });
+    return structure.data.models.some(m => QualityAssessment.isApplicable(m, 'pLDDT'));
 }
 
 function determineAssemblyId(traj: any, p: MotifProps) {
@@ -400,18 +419,26 @@ function determineAssemblyId(traj: any, p: MotifProps) {
     } catch (error) {
         console.warn(error);
     }
-    // default to '1' if error or legitimately not found
-    console.warn(`Could not auto-detect assembly-of-interest. Falling back to '1'`);
-    Object.assign(p, { assemblyId: '1' });
+    // default to model coordinates if error or legitimately not found
+    console.warn(`Could not auto-detect assembly-of-interest. Defaulting to model coordinates and dropping "structOperId" values`);
+    Object.assign(p, { assemblyId: undefined });
+    Object.assign(p, { targets: p.targets.map(({ structOperId, ...rest }) => rest) });
 }
 
-async function initVolumeStreaming(plugin: PluginContext, structure: StructureObject, props?: { overrideRadius?: number, hiddenChannels: string[] }) {
+async function initVolumeStreaming(plugin: PluginContext, structure: StructureObject, props?: { overrideRadius?: number, hiddenChannels: string[], wireframe?: boolean }) {
     if (!structure?.cell?.parent) return;
 
     const volumeRoot = StateSelection.findTagInSubtree(structure.cell.parent.tree, structure.cell.transform.ref, VolumeStreaming.RootTag);
     if (!volumeRoot) {
         const state = plugin.state.data;
         const params = PD.getDefaultValues(InitVolumeStreaming.definition.params!(structure.obj!, plugin));
+        // RO-4085: allow switching to wireframe
+        if (props?.wireframe) {
+            params.options.channelParams['em'] = { wireframe: true };
+            params.options.channelParams['2fo-fc'] = { wireframe: true };
+            params.options.channelParams['fo-fc(+ve)'] = { wireframe: true };
+            params.options.channelParams['fo-fc(-ve)'] = { wireframe: true };
+        }
         await plugin.runTask(state.applyAction(InitVolumeStreaming, params, structure.ref));
 
         // RO-2751: allow to specify radius of shown density

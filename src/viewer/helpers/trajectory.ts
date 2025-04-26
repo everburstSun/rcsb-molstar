@@ -10,7 +10,7 @@ import { PresetProps, RcsbPreset } from './preset';
 import { Asset } from 'molstar/lib/mol-util/assets';
 import { Mat4 } from 'molstar/lib/mol-math/linear-algebra';
 import { StateTransforms } from 'molstar/lib/mol-plugin-state/transforms';
-import { CoordinatesFromDcd, CoordinatesFromXtc, CoordinatesFromTrr, CoordinatesFromNctraj, TrajectoryFromModelAndCoordinates } from 'molstar/lib/mol-plugin-state/transforms/model';
+import { CoordinatesFromDcd, CoordinatesFromXtc, CoordinatesFromTrr, CoordinatesFromNctraj, CoordinatesFromLammpstraj, TrajectoryFromModelAndCoordinates } from 'molstar/lib/mol-plugin-state/transforms/model';
 import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory';
 import { BuiltInCoordinatesFormat } from 'molstar/lib/mol-plugin-state/formats/coordinates';
 import { TrajectoryHierarchyPresetProvider } from 'molstar/lib/mol-plugin-state/builder/structure/hierarchy-preset';
@@ -61,6 +61,9 @@ export class TrajectoryLoader {
                 break;
             case 'nctraj':
                 transform = CoordinatesFromNctraj;
+                break;
+            case 'lammpstrj':
+                transform = CoordinatesFromLammpstraj;
                 break;
         }
         const coords = await this.plugin.build().to(coordData).apply(transform, coordData).commit();

@@ -27,6 +27,7 @@ interface SharedParams {
 export interface LoadParams extends SharedParams {
     /** A File object or URL representing a structure file  */
     fileOrUrl: File | string
+    label?: string
 }
 
 export interface CoordParams {
@@ -66,12 +67,26 @@ export interface ViewerState {
     showVolumeStreamingControls: boolean
     showAssemblySymmetryControls: boolean
     showValidationReportControls: boolean
+    showPredictedAlignedErrorPlot: boolean
 
     modelLoader: ModelLoader
     trajectoryLoader: TrajectoryLoader
 
     collapsed: BehaviorSubject<CollapsedState>
     detachedFromSierra: boolean
+}
+
+export interface LigandViewerState {
+    showMeasurementsControls: boolean
+    showStructureComponentControls: boolean
+    ignoreHydrogens: boolean
+    showLabels: boolean
+    shownCoordinateType: 'ideal' | 'model' | 'both'
+    aromaticBonds: boolean
+
+    modelLoader: ModelLoader
+
+    collapsed: BehaviorSubject<CollapsedState>
 }
 
 export function ViewerState(plugin: PluginContext) {
