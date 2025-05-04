@@ -10,9 +10,12 @@ import { PresetProps, RcsbPreset } from './preset';
 import { Asset } from 'molstar/lib/mol-util/assets';
 import { Mat4 } from 'molstar/lib/mol-math/linear-algebra';
 import { StateTransforms } from 'molstar/lib/mol-plugin-state/transforms';
-import { CoordinatesFromDcd, CoordinatesFromXtc, CoordinatesFromTrr, CoordinatesFromNctraj, CoordinatesFromLammpstraj, TrajectoryFromModelAndCoordinates } from 'molstar/lib/mol-plugin-state/transforms/model';
+import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
+import { StateObjectSelector, StateSelection } from 'molstar/lib/mol-state';
+import { TrajectoryFromModelAndCoordinates } from 'molstar/lib/mol-plugin-state/transforms/model';
 import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory';
 import { BuiltInCoordinatesFormat } from 'molstar/lib/mol-plugin-state/formats/coordinates';
+import { BuiltInTopologyFormat } from 'molstar/lib/mol-plugin-state/formats/topology';
 import { TrajectoryHierarchyPresetProvider } from 'molstar/lib/mol-plugin-state/builder/structure/hierarchy-preset';
 
 export class TrajectoryLoader {
@@ -38,7 +41,7 @@ export class TrajectoryLoader {
 
     private async handleModelAndCoordinates<P = {}, S = {}>(
         topoData: any,
-        topoFormat: BuiltInTrajectoryFormat,
+        topoFormat: BuiltInTrajectoryFormat | BuiltInTopologyFormat,
         coordData: any,
         coordFormat: BuiltInCoordinatesFormat,
         props?: PresetProps,
@@ -46,27 +49,19 @@ export class TrajectoryLoader {
         reprProvider?: TrajectoryHierarchyPresetProvider<P, S>,
         params?: P
     ): Promise<S | ReturnType<typeof RcsbPreset.apply> | undefined> {
-        const temptraj = await this.plugin.builders.structure.parseTrajectory(topoData, topoFormat);
-        const topol = await this.plugin.builders.structure.createModel(temptraj);
-        let transform;
-        switch (coordFormat) {
-            case 'dcd':
-                transform = CoordinatesFromDcd;
-                break;
-            case 'xtc':
-                transform = CoordinatesFromXtc;
-                break;
-            case 'trr':
-                transform = CoordinatesFromTrr;
-                break;
-            case 'nctraj':
-                transform = CoordinatesFromNctraj;
-                break;
-            case 'lammpstrj':
-                transform = CoordinatesFromLammpstraj;
-                break;
+        const topologyFormatValues = ['psf', 'prmtop', 'top'];
+        const isTopologyFormat = (format: any): format is BuiltInTopologyFormat => 
+            topologyFormatValues.includes(format as string);
+        let topol: StateObjectSelector;
+        if (isTopologyFormat(topoFormat)) {
+            const provider = this.plugin.dataFormats.get(topoFormat);
+            topol = await provider!.parse(this.plugin, topoData);
+        } else {
+            const temptraj = await this.plugin.builders.structure.parseTrajectory(topoData, topoFormat);
+            topol = await this.plugin.builders.structure.createModel(temptraj);
         }
-        const coords = await this.plugin.build().to(coordData).apply(transform, coordData).commit();
+        const provider = this.plugin.dataFormats.get(coordFormat);
+        const coords = await provider!.parse(this.plugin, coordData);
         const trajectory = await this.plugin.build().toRoot()
             .apply(TrajectoryFromModelAndCoordinates, {
                 modelRef: topol.ref,
@@ -98,4 +93,24 @@ export class TrajectoryLoader {
     constructor(private plugin: PluginContext) {
 
     }
+}
+
+export function setFrame(plugin: any, frameIdx: number) {
+    const state = plugin.state.data;
+    const models = state.selectQ((q: any) => q.ofTransformer(StateTransforms.Model.ModelFromTrajectory));
+    const update = state.build();
+    for (const m of models) {
+        const parent = StateSelection.findAncestorOfType(state.tree, state.cells, m.transform.ref, PluginStateObject.Molecule.Trajectory);
+        if (!parent || !parent.obj) continue;
+        const traj = parent.obj;
+        update.to(m).update(() => {
+            let modelIndex: number;
+            if (frameIdx < 0 ) {modelIndex = 0;}
+            else if (frameIdx < traj.data.frameCount) {modelIndex = frameIdx;}
+            else {modelIndex = traj.data.frameCount - 1;}
+            return { modelIndex };
+        });
+    }
+    update.commit();
+    state.updateTree(update);
 }

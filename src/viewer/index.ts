@@ -17,7 +17,7 @@ import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import * as React from 'react';
 
 import { ModelLoader } from './helpers/model';
-import { TrajectoryLoader } from './helpers/trajectory';
+import { TrajectoryLoader, setFrame } from './helpers/trajectory';
 import { PresetProps } from './helpers/preset';
 import { ControlsWrapper } from './ui/controls';
 import { PluginConfig, PluginConfigItem } from 'molstar/lib/mol-plugin/config';
@@ -362,6 +362,10 @@ export class Viewer {
 
     loadTrajectory<P, S>(topoObj: object, coordObj: object, config?: {props?: PresetProps; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
         return this.customState.trajectoryLoader.load(topoObj, coordObj, config?.props, config?.matrix, config?.reprProvider, config?.params);
+    }
+
+    setFrame(frameIdx: number) {
+        setFrame(this._plugin, frameIdx);
     }
 
     handleResize() {

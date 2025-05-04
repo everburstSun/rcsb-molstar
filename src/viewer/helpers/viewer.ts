@@ -57,7 +57,7 @@ export function setFocusFromTargets(plugin: PluginContext, targets: SelectBase |
     const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, Array.isArray(targets) ? targets[0] : targets);
     if (!data) return;
 
-    const analyzedTargets = analyzeTargets(targets)
+    const analyzedTargets = analyzeTargets(targets);
     const expression = targetsToExpression(analyzedTargets);
     
     const loci = expressionToLoci(expression, data);
