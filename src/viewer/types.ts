@@ -42,6 +42,10 @@ export interface ParseParams extends SharedParams {
     data: string | number[] | Uint8Array
 }
 
+/** The types of the measurement */
+export type MeasurementType = 'label' | 'orientation' | 'plane' | 'distance' | 'angle' | 'dihedral'
+
+
 export type CollapsedState = {
     selection: boolean
     measurements: boolean

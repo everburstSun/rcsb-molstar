@@ -2,7 +2,7 @@ import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder'
 import { StructureSelectionQueries as Q } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
 import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { Expression } from 'molstar/lib/mol-script/language/expression';
-import { QueryContext, Structure, StructureElement, StructureSelection } from 'molstar/lib/mol-model/structure';
+import { QueryContext, Structure, StructureElement, StructureSelection, StructureProperties } from 'molstar/lib/mol-model/structure';
 import { compile } from 'molstar/lib/mol-script/runtime/query/compiler';
 import { GlyGenProps } from './preset';
 
@@ -42,12 +42,22 @@ export type Target = {
      * ligandInteraction preset, which would otherwise focus alternative conformations and symmetry mates.
      */
     readonly extendToChain?: boolean
+
+    /**
+     * Newly added type for selection from dash plugin
+     */
+    readonly labelAtomId?: string
+    readonly atomIndex?: number
+    readonly x?: number
+    readonly y?: number
+    readonly z?: number
 }
 
 export type SelectBase = {
     readonly modelId: string
     readonly labelAsymId: string
     readonly operatorName?: string
+    readonly auth?: boolean
 }
 export type SelectSingle = {
     readonly labelSeqId: number
@@ -252,9 +262,10 @@ export function targetsToExpression(targets: Target[]): Expression {
 }
 
 function targetToExpression(target: Target): Expression {
+    const atomTests: Expression[] = [];
     const residueTests: Expression[] = [];
     const chainTests: Expression[] = [];
-    const tests: { 'residue-test': Expression, 'chain-test': Expression } = Object.create(null);
+    const tests: { 'atom-test': Expression, 'residue-test': Expression, 'chain-test': Expression } = Object.create(null);
 
     if (target.authSeqId) {
         residueTests.push(MS.core.rel.eq([target.authSeqId, MS.ammp('auth_seq_id')]));
@@ -265,6 +276,9 @@ function targetToExpression(target: Target): Expression {
     }
     if (target.labelCompId) {
         residueTests.push(MS.core.rel.eq([target.labelCompId, MS.ammp('label_comp_id')]));
+    }
+    if (target.atomIndex) {
+        atomTests.push(MS.core.rel.eq([target.atomIndex, MS.acp('sourceIndex')]));
     }
     if (target.labelAltId) {
         residueTests.push(MS.core.rel.eq([target.labelAltId, MS.ammp('label_alt_id')]));
@@ -293,6 +307,11 @@ function targetToExpression(target: Target): Expression {
     } else if (chainTests.length > 1) {
         tests['chain-test'] = MS.core.logic.and(chainTests);
     }
+    if (atomTests.length === 1) {
+        tests['atom-test'] = atomTests[0];
+    } else if (atomTests.length > 1) {
+        tests['atom-test'] = MS.core.logic.and(atomTests);
+    }
 
     if (Object.keys(tests).length > 0) {
         return MS.struct.modifier.union([
@@ -301,4 +320,25 @@ function targetToExpression(target: Target): Expression {
     } else {
         return MS.struct.generator.empty;
     }
+}
+
+export function addLociToTargets(selection: StructureElement.Loci, targets: Target[]) {
+    StructureElement.Loci.forEachLocation(selection, (loc) => {
+        if (StructureElement.Location.is(loc)) {
+            const target: Target = {
+                labelAsymId: StructureProperties.chain.label_asym_id(loc),
+                authAsymId: StructureProperties.chain.auth_asym_id(loc),
+                labelCompId: StructureProperties.atom.label_comp_id(loc),
+                labelSeqId: StructureProperties.residue.label_seq_id(loc),
+                authSeqId: StructureProperties.residue.auth_seq_id(loc),
+                pdbxInsCode: StructureProperties.residue.pdbx_PDB_ins_code(loc),
+                labelAtomId: StructureProperties.atom.label_atom_id(loc),
+                atomIndex: StructureProperties.atom.sourceIndex(loc),
+                x: StructureProperties.atom.x(loc),
+                y: StructureProperties.atom.y(loc),
+                z: StructureProperties.atom.z(loc)
+            }
+            targets.push(target);
+        }
+    });
 }

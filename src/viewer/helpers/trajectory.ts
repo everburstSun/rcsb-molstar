@@ -11,7 +11,7 @@ import { Asset } from 'molstar/lib/mol-util/assets';
 import { Mat4 } from 'molstar/lib/mol-math/linear-algebra';
 import { StateTransforms } from 'molstar/lib/mol-plugin-state/transforms';
 import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
-import { StateObjectSelector, StateSelection } from 'molstar/lib/mol-state';
+import { StateObjectSelector/*, StateSelection*/ } from 'molstar/lib/mol-state';
 import { TrajectoryFromModelAndCoordinates } from 'molstar/lib/mol-plugin-state/transforms/model';
 import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory';
 import { BuiltInCoordinatesFormat } from 'molstar/lib/mol-plugin-state/formats/coordinates';
@@ -97,20 +97,18 @@ export class TrajectoryLoader {
 
 export function setFrame(plugin: any, frameIdx: number) {
     const state = plugin.state.data;
-    const models = state.selectQ((q: any) => q.ofTransformer(StateTransforms.Model.ModelFromTrajectory));
-    const update = state.build();
-    for (const m of models) {
-        const parent = StateSelection.findAncestorOfType(state.tree, state.cells, m.transform.ref, PluginStateObject.Molecule.Trajectory);
-        if (!parent || !parent.obj) continue;
-        const traj = parent.obj;
-        update.to(m).update(() => {
+    const loadedStructures = plugin.managers.structure.hierarchy.current.structures;
+    for (const s of loadedStructures) {
+        const m = s.model;
+        const parent = state.cells.get(m.cell.sourceRef)!.obj as PluginStateObject.Molecule.Trajectory;
+        if (!parent) return;
+        plugin.state.updateTransform(state, m.cell.transform.ref, () => {
             let modelIndex: number;
             if (frameIdx < 0 ) {modelIndex = 0;}
-            else if (frameIdx < traj.data.frameCount) {modelIndex = frameIdx;}
-            else {modelIndex = traj.data.frameCount - 1;}
+            else if (frameIdx < parent.data.frameCount) {modelIndex = frameIdx;}
+            else {modelIndex = parent.data.frameCount - 1;}
             return { modelIndex };
-        });
+        }, 'Model Index')
     }
-    update.commit();
-    state.updateTree(update);
 }
+

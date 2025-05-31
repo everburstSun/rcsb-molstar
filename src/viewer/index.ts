@@ -10,7 +10,7 @@
 import { BehaviorSubject } from 'rxjs';
 import { Plugin } from 'molstar/lib/mol-plugin-ui/plugin';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
-import { ViewerState, CollapsedState, ModelUrlProvider, LigandViewerState, LoadParams } from './types';
+import { ViewerState, CollapsedState, ModelUrlProvider, LigandViewerState, LoadParams, MeasurementType } from './types';
 import { PluginSpec } from 'molstar/lib/mol-plugin/spec';
 
 import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
@@ -30,9 +30,10 @@ import { ObjectKeys } from 'molstar/lib/mol-util/type-helpers';
 import { PluginLayoutControlsDisplay } from 'molstar/lib/mol-plugin/layout';
 import { SuperposeColorThemeProvider } from './helpers/superpose/color';
 import { NakbColorThemeProvider } from './helpers/nakb/color';
-import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, createBoundingBox, createSphere } from './helpers/viewer';
-import { SelectBase, SelectTarget, Target } from './helpers/selection';
-// import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
+import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, getCurrentSelection, getCurrentFocus, createBoundingBox, createSphere, addMeasurement, clearMeasurement } from './helpers/viewer';
+import { SelectTarget, Target } from './helpers/selection';
+import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
+import { State } from 'molstar/lib/mol-state';
 import { DefaultPluginUISpec, PluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
 import { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
 import { ANVILMembraneOrientation, MembraneOrientationPreset } from 'molstar/lib/extensions/anvil/behavior';
@@ -368,6 +369,24 @@ export class Viewer {
         setFrame(this._plugin, frameIdx);
     }
 
+    getCurrentFrame(state: State) {
+        if (this._plugin.behaviors.state.isAnimating.value) return;
+        
+        const updatedModels = state.selectQ((q: any) => q.ofTransformer(StateTransforms.Model.ModelFromTrajectory))
+        .filter((s: any) => PluginStateObject.Molecule.Model.is(s.obj));
+        
+        if (updatedModels.length > 1) {
+            for (const model of updatedModels) {
+                const data = model.obj?.data;
+                if (!data) continue;
+                if (model.params?.definition?.modelIndex?.converted?.max <= 1) continue;
+
+                const modelIndex = data.modelNum;
+                return modelIndex;
+            }
+        }
+    }
+
     handleResize() {
         this._plugin.layout.events.updated.next(void 0);
     }
@@ -376,15 +395,19 @@ export class Viewer {
         return exportHierarchy(this.plugin, options);
     }
 
-    setFocus(targets: SelectTarget | SelectTarget[], focus = false) {
+    setFocus(targets: SelectTarget[], focus = false) {
         setFocusFromTargets(this._plugin, targets, focus);
+    }
+
+    getCurrentFocus(): Target[] {
+        return getCurrentFocus(this._plugin);
     }
 
     clearFocus(): void {
         this._plugin.managers.structure.focus.clear();
     }
 
-    select(targets: SelectTarget | SelectTarget[], mode: 'select' | 'hover', modifier: 'add' | 'set') {
+    select(targets: SelectTarget[], mode: 'select' | 'hover', modifier: 'add' | 'set') {
         select(this._plugin, targets, mode, modifier);
     }
 
@@ -392,7 +415,11 @@ export class Viewer {
         clearSelection(this._plugin, mode, target);
     }
 
-    async createComponent(label: string, targets: SelectBase | SelectTarget | SelectTarget[], representationParams: object[]) {
+    getCurrentSelection(): Target[] {
+        return getCurrentSelection(this._plugin);
+    }
+
+    async createComponent(label: string, targets: SelectTarget[], representationParams: object[]) {
         await createComponent(this._plugin, label, targets, 'cartoon');
         for (let param of representationParams) {
             addRepresentation(this._plugin, label, param);
@@ -411,6 +438,14 @@ export class Viewer {
     async createSphere(label: string, center: number[], radius: number, color: ColorName, alpha?: number, detail?: number) {
         const ref = await createSphere(this._plugin, label, center, radius, color, alpha, detail);
         return ref;
+    }
+
+    async addMeasurement(targets: SelectTarget[][], type: MeasurementType) {
+        await addMeasurement(this._plugin, targets, type);
+    }
+
+    async clearMeasurement(targets: SelectTarget[][], type: MeasurementType) {
+        clearMeasurement(this._plugin);
     }
 
     removeRef(ref: string) {
