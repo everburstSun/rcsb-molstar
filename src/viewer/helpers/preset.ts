@@ -203,7 +203,7 @@ export const RcsbPreset = TrajectoryHierarchyPresetProvider({
                     if (!target.labelAsymId) continue;
                     if (!structure.data!.inheritedPropertyData.colors[target.labelAsymId])
                         structure.data!.inheritedPropertyData.colors[target.labelAsymId] = new Map();
-                    const residues: number[] = (target.labelSeqRange) ? toRange(target.labelSeqRange.beg, target.labelSeqRange.end) : [];
+                    const residues: number[] = (target.labelSeqRange) ? toRange(target.labelSeqRange.beg, target.labelSeqRange.end) : [target.labelSeqId!];
                     for (const num of residues) {
                         structure.data!.inheritedPropertyData.colors[target.labelAsymId].set(num, colorValue);
                     }
