@@ -202,6 +202,7 @@ export class Viewer {
                 },
                 camera: {
                     // desirable for alignment view so that the display doesn't "jump around" as more structures get loaded
+                    ...o.canvas3d?.camera,
                     manualReset: o.manualReset
                 }
             },
