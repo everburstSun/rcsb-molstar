@@ -161,17 +161,8 @@ export async function createComponent(plugin: PluginContext, componentLabel: str
     await plugin.managers.structure.component.add({
         selection: sel,
         options: { checkExisting: false, label: componentLabel },
-        representation: representationType,
+        representation: 'none',
     }, [structureRef]);
-    // remove all the representation here since we want to create them elsewhere
-    plugin.managers.structure.hierarchy.currentComponentGroups.forEach(c => {
-        for (const comp of c) {
-            if (comp.cell.obj?.label === componentLabel) {
-                plugin.managers.structure.component.removeRepresentations(c);
-                break;
-            }
-        }
-    });
 }
 
 export async function addRepresentation(plugin: PluginContext, componentLabel: string, representationParam: any) {
