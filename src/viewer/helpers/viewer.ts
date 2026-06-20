@@ -9,10 +9,10 @@ import { Structure } from 'molstar/lib/mol-model/structure/structure';
 import { PluginContext } from 'molstar/lib/mol-plugin/context';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
 import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
-import { StructureRepresentationRegistry } from 'molstar/lib/mol-repr/structure/registry';
 import { StructureSelectionQuery } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
+import { BasicCylinderProps } from "molstar/lib/mol-geo/geometry/mesh/builder/cylinder";
 import { StateTransforms } from "molstar/lib/mol-plugin-state/transforms";
-import { CreateBoundingBox, CreateSphere } from "./shapes/behavior";
+import { CreateBoundingBox, CreateSphere, CreateCylinder, CreatePlane, CreateAxes, CreateEllipsoid, CreateRibbon, CreateSheet, CreateTube } from "./shapes/behavior";
 import { createStructureRepresentationParams } from 'molstar/lib/mol-plugin-state/helpers/structure-representation-params'
 import { StructureMeasurementManagerState } from 'molstar/lib/mol-plugin-state/manager/structure/measurement'
 import { MeasurementType } from '../types';
@@ -151,7 +151,7 @@ export function getCurrentFocus(plugin: PluginContext) {
     return targets;
 }
 
-export async function createComponent(plugin: PluginContext, componentLabel: string, targets: SelectTarget[], representationType: StructureRepresentationRegistry.BuiltIn) {
+export async function createComponent(plugin: PluginContext, componentLabel: string, targets: SelectTarget[]) {
     const structureRef = getStructureRefWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]);
     if (!structureRef) throw Error('createComponent error: model not found');
 
@@ -167,14 +167,14 @@ export async function createComponent(plugin: PluginContext, componentLabel: str
 
 export async function addRepresentation(plugin: PluginContext, componentLabel: string, representationParam: any) {
     const param = createStructureRepresentationParams(plugin, undefined, representationParam);
-    plugin.managers.structure.hierarchy.currentComponentGroups.forEach(c => {
+    for (const c of plugin.managers.structure.hierarchy.currentComponentGroups) {
         for (const comp of c) {
             if (comp.cell.obj?.label === componentLabel) {
-                plugin.build().to(comp.cell).apply(StateTransforms.Representation.StructureRepresentation3D, param).commit();
-                break;
+                await plugin.build().to(comp.cell).apply(StateTransforms.Representation.StructureRepresentation3D, param).commit();
+                return;
             }
         }
-    });
+    }
 }
 
 
@@ -217,6 +217,136 @@ export async function createSphere(plugin: PluginContext, label: string, center:
         color: ColorNames[color],
         alpha: alpha,
         detail: detail
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createCylinder(plugin: PluginContext, label: string, start: number[], end: number[], color: ColorName, props?: BasicCylinderProps, alpha?: number, dashed?: boolean, dash_segments?: number) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'CylinderGroup' })
+    shapesGroup.apply(CreateCylinder, {
+        start: start,
+        end: end,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        dashed: dashed,
+        dash_segments: dash_segments,
+        props: props
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createPlane(plugin: PluginContext, label: string, center: number[], dirMajor: number[], dirMinor: number[], scale: number[], color: ColorName, alpha?: number, doubleSided?: boolean) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'PlaneGroup' })
+    shapesGroup.apply(CreatePlane, {
+        center: center,
+        dirMajor: dirMajor,
+        dirMinor: dirMinor,
+        scale: scale,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        doubleSided: doubleSided
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createAxes(plugin: PluginContext, label: string, origin: number[], dirA: number[], dirB: number[], dirC: number[], color: ColorName, alpha?: number, radiusScale?: number, detail?: number, radialSegments?: number) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'AxesGroup' })
+    shapesGroup.apply(CreateAxes, {
+        origin: origin,
+        dirA: dirA,
+        dirB: dirB,
+        dirC: dirC,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        radiusScale: radiusScale,
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createEllipsoid(plugin: PluginContext, label: string, center: number[], dirMajor: number[], dirMinor: number[], radiusScale: number[], color: ColorName, alpha?: number, detail?: number) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'EllipsoidGroup' })
+    shapesGroup.apply(CreateEllipsoid, {
+        center: center,
+        dirMajor: dirMajor,
+        dirMinor: dirMinor,
+        radiusScale: radiusScale,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        detail: detail
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createRibbon(plugin: PluginContext, label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], color: ColorName, alpha?: number, linearSegments?: number, arrowHeight?: number) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'RibbonGroup' })
+    shapesGroup.apply(CreateRibbon, {
+        controlPoints: controlPoints,
+        normalVectors: normalVectors,
+        binormalVectors: binormalVectors,
+        heightValues: widthValues,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        linearSegments: linearSegments,
+        arrowHeight: arrowHeight
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createSheet(plugin: PluginContext, label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], heightValues: number[], color: ColorName, alpha?: number, linearSegments?: number, arrowHeight?: number, startCap?: boolean, endCap?: boolean) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'SheetGroup' })
+    shapesGroup.apply(CreateSheet, {
+        controlPoints: controlPoints,
+        normalVectors: normalVectors,
+        binormalVectors: binormalVectors,
+        widthValues: widthValues,
+        heightValues: heightValues,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        linearSegments: linearSegments,
+        arrowHeight: arrowHeight,
+        startCap: startCap,
+        endCap: endCap
+    })
+    await structure.commit();
+    return shapesGroup.ref;
+}
+
+export async function createTube(plugin: PluginContext, label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], heightValues: number[], color: ColorName, alpha?: number, linearSegments?: number, radialSegments?: number, startCap?: boolean, endCap?: boolean, crossSection?: 'elliptical' | 'rounded', roundCap?: boolean) {
+    const structure = plugin.build().toRoot();
+    const shapesGroup = structure.apply(StateTransforms.Misc.CreateGroup, { label: 'TubeGroup' })
+    shapesGroup.apply(CreateTube, {
+        controlPoints: controlPoints,
+        normalVectors: normalVectors,
+        binormalVectors: binormalVectors,
+        widthValues: widthValues,
+        heightValues: heightValues,
+        label: label,
+        color: ColorNames[color],
+        alpha: alpha,
+        linearSegments: linearSegments,
+        radialSegments: radialSegments,
+        startCap: startCap,
+        endCap: endCap,
+        crossSection: crossSection,
+        roundCap: roundCap
     })
     await structure.commit();
     return shapesGroup.ref;

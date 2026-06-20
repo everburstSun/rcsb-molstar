@@ -17,6 +17,13 @@ export type ModelUrlProvider = (pdbId: string) => {
     isBinary: boolean
 }
 
+export type ScreenshotCropParams = {
+    x: number,
+    y: number,
+    width: number,
+    height: number
+}
+
 interface SharedParams {
     /** A supported file format extension string */
     format: BuiltInTrajectoryFormat,

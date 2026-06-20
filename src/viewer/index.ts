@@ -10,13 +10,14 @@
 import { BehaviorSubject } from 'rxjs';
 import { Plugin } from 'molstar/lib/mol-plugin-ui/plugin';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
-import { ViewerState, CollapsedState, ModelUrlProvider, LigandViewerState, LoadParams, MeasurementType } from './types';
+import { ViewerState, CollapsedState, ModelUrlProvider, LigandViewerState, LoadParams, MeasurementType, ScreenshotCropParams } from './types';
 import { PluginSpec } from 'molstar/lib/mol-plugin/spec';
 
 import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
 import * as React from 'react';
 
 import { ModelLoader } from './helpers/model';
+import { loadVolumeFromUrl, VolumeIsovalueInfo } from 'molstar/lib/extensions/plugin/loaders';
 import { TrajectoryLoader, setFrame } from './helpers/trajectory';
 import { PresetProps } from './helpers/preset';
 import { ControlsWrapper } from './ui/controls';
@@ -25,12 +26,14 @@ import { AssemblySymmetry } from 'molstar/lib/extensions/assembly-symmetry/behav
 import { RCSBValidationReport } from 'molstar/lib/extensions/rcsb/validation-report/behavior';
 import { Mat4 } from 'molstar/lib/mol-math/linear-algebra';
 import { PluginState } from 'molstar/lib/mol-plugin/state';
+import { BuildInVolumeFormat } from 'molstar/lib/mol-plugin-state/formats/volume';
 import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory';
 import { ObjectKeys } from 'molstar/lib/mol-util/type-helpers';
 import { PluginLayoutControlsDisplay } from 'molstar/lib/mol-plugin/layout';
 import { SuperposeColorThemeProvider } from './helpers/superpose/color';
 import { NakbColorThemeProvider } from './helpers/nakb/color';
-import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, getCurrentSelection, getCurrentFocus, createBoundingBox, createSphere, addMeasurement, clearMeasurement } from './helpers/viewer';
+import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, getCurrentSelection, getCurrentFocus, createBoundingBox, createSphere, createCylinder, createPlane, createAxes, createEllipsoid, createRibbon, createSheet, createTube, addMeasurement, clearMeasurement } from './helpers/viewer';
+import { BasicCylinderProps } from "molstar/lib/mol-geo/geometry/mesh/builder/cylinder";
 import { SelectTarget, Target } from './helpers/selection';
 import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
 import { State } from 'molstar/lib/mol-state';
@@ -49,6 +52,8 @@ import { exportHierarchy } from 'molstar/lib/extensions/model-export/export';
 import { GeometryExport } from 'molstar/lib/extensions/geo-export';
 import { Mp4Export } from 'molstar/lib/extensions/mp4-export';
 import { PartialCanvas3DProps } from 'molstar/lib/mol-canvas3d/canvas3d';
+import { Camera } from 'molstar/lib/mol-canvas3d/camera';
+import { ViewportScreenshotHelper, ViewportScreenshotHelperParams } from 'molstar/lib/mol-plugin/util/viewport-screenshot';
 import { RSCCScore } from './helpers/rscc/behavior';
 import { createRoot } from 'react-dom/client';
 import { AssemblySymmetryData } from 'molstar/lib/extensions/assembly-symmetry/prop';
@@ -325,6 +330,10 @@ export class Viewer {
         this._plugin.managers.camera.reset(undefined, durationMs);
     }
 
+    setCamera(snapshot: Partial<Camera.Snapshot> | undefined, durationMs?: number) {
+        this._plugin.managers.camera.reset(snapshot, durationMs);
+    }
+
     clear() {
         const state = this._plugin.state.data;
         return PluginCommands.State.RemoveObject(this._plugin, { state, ref: state.tree.root.ref });
@@ -360,6 +369,10 @@ export class Viewer {
 
     loadStructureFromData<P, S>(data: string | number[], format: BuiltInTrajectoryFormat, isBinary: boolean, config?: {props?: PresetProps & { dataLabel?: string }; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
         return this.customState.modelLoader.parse({ data, format, isBinary }, config?.props, config?.matrix, config?.reprProvider, config?.params);
+    }
+
+    loadVolumeFromUrl({ url, format, isBinary }: { url: string, format: BuildInVolumeFormat, isBinary: boolean }, isovalues: VolumeIsovalueInfo[], options?: { entryId?: string | string[], isLazy?: boolean }) {
+        return loadVolumeFromUrl(this.plugin, { url, format, isBinary }, isovalues, options);
     }
 
     loadTrajectory<P, S>(topoObj: object, coordObj: object, config?: {props?: PresetProps; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
@@ -421,9 +434,9 @@ export class Viewer {
     }
 
     async createComponent(label: string, targets: SelectTarget[], representationParams: object[]) {
-        await createComponent(this._plugin, label, targets, 'cartoon');
-        for (let param of representationParams) {
-            addRepresentation(this._plugin, label, param);
+        await createComponent(this._plugin, label, targets);
+        for (const param of representationParams) {
+            await addRepresentation(this._plugin, label, param);
         }
     }
 
@@ -441,12 +454,55 @@ export class Viewer {
         return ref;
     }
 
+    async createCylinder(label: string, start: number[], end: number[], color: ColorName, alpha?: number, props?: BasicCylinderProps, dashed?: boolean, dash_segments?: number) {
+        const ref = await createCylinder(this._plugin, label, start, end, color, props, alpha, dashed, dash_segments);
+        return ref;
+    }
+
+    async createPlane(label: string, center: number[], dirMajor: number[], dirMinor: number[], scaleX: number, scaleY: number, color: ColorName, alpha?: number, doubleSided?: boolean) {
+        const ref = await createPlane(this._plugin, label, center, dirMajor, dirMinor, [scaleX, scaleY, 1], color, alpha, doubleSided);
+        return ref;
+    }
+
+    async createAxes(label: string, origin: number[], dirA: number[], dirB: number[], dirC: number[], color: ColorName, alpha?: number, radiusScale?: number) {
+        const ref = await createAxes(this._plugin, label, origin, dirA, dirB, dirC, color, alpha, radiusScale);
+        return ref;
+    }
+
+    async createEllipsoid(label: string, center: number[], dirMajor: number[], dirMinor: number[], radiusScale: number[], color: ColorName, alpha?: number, detail?: number) {
+        const ref = await createEllipsoid(this._plugin, label, center, dirMajor, dirMinor, radiusScale, color, alpha, detail);
+        return ref;
+    }
+
+    async createRibbon(label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], color: ColorName, alpha?: number, linearSegments?: number, arrowHeight?: number) {
+        const ref = await createRibbon(this._plugin, label, controlPoints, normalVectors, binormalVectors, widthValues, color, alpha, linearSegments, arrowHeight);
+        return ref;
+    }
+
+    async createSheet(label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], heightValues: number[], color: ColorName, alpha?: number, linearSegments?: number, arrowHeight?: number, startCap?: boolean, endCap?: boolean) {
+        const ref = await createSheet(this._plugin, label, controlPoints, normalVectors, binormalVectors, widthValues, heightValues, color, alpha, linearSegments, arrowHeight, startCap, endCap);
+        return ref;
+    }
+
+    async createTube(label: string, controlPoints: number[], normalVectors: number[], binormalVectors: number[], widthValues: number[], heightValues: number[], color: ColorName, alpha?: number, linearSegments?: number, radialSegments?: number, startCap?: boolean, endCap?: boolean, crossSection?: 'elliptical' | 'rounded', roundCap?: boolean) {
+        const ref = await createTube(this._plugin, label, controlPoints, normalVectors, binormalVectors, widthValues, heightValues, color, alpha, linearSegments, radialSegments, startCap, endCap, crossSection, roundCap);
+        return ref;
+    }
+
     async addMeasurement(targets: SelectTarget[][], type: MeasurementType) {
         await addMeasurement(this._plugin, targets, type);
     }
 
-    async clearMeasurement(targets: SelectTarget[][], type: MeasurementType) {
+    async clearMeasurement() {
         clearMeasurement(this._plugin);
+    }
+
+    downloadScreenshot(filename: string, params: ViewportScreenshotHelperParams, crop?: ScreenshotCropParams) {
+        const screenshot = new ViewportScreenshotHelper(this._plugin);
+        const defaultParams = screenshot.params;
+        screenshot.behaviors.values.next({ ...defaultParams as any, ...params });
+        if (crop) screenshot.behaviors.relativeCrop.next(crop);
+        screenshot.download(filename);
     }
 
     removeRef(ref: string) {
