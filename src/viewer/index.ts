@@ -6,8 +6,8 @@
  * @author Yana Rose <yana.rose@rcsb.org>
  * @author Sebastian Bittrich <sebastian.bittrich@rcsb.org>
  */
-
-import { BehaviorSubject } from 'rxjs';
+import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder';
+import { BehaviorSubject, Subscription } from 'rxjs';
 import { Plugin } from 'molstar/lib/mol-plugin-ui/plugin';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
 import { ViewerState, CollapsedState, ModelUrlProvider, LigandViewerState, LoadParams, MeasurementType, ScreenshotCropParams } from './types';
@@ -32,9 +32,42 @@ import { ObjectKeys } from 'molstar/lib/mol-util/type-helpers';
 import { PluginLayoutControlsDisplay } from 'molstar/lib/mol-plugin/layout';
 import { SuperposeColorThemeProvider } from './helpers/superpose/color';
 import { NakbColorThemeProvider } from './helpers/nakb/color';
-import { setFocusFromTargets, removeComponent, clearSelection, createComponent, addRepresentation, select, getCurrentSelection, getCurrentFocus, createBoundingBox, createSphere, createCylinder, createPlane, createAxes, createEllipsoid, createRibbon, createSheet, createTube, addMeasurement, clearMeasurement } from './helpers/viewer';
+import { setFocusFromTargets,
+    removeComponent,
+    clearSelection,
+    createComponent,
+    getAssemblyIdsFromModel,
+    getAsymIdsFromStructureModel,
+    getDefaultStructure,
+    getDefaultModel,
+    firstMatchingAssemblyId,
+    addRepresentation,
+    select,
+    getCurrentSelection,
+    getCurrentFocus,
+    createBoundingBox,
+    createSphere,
+    createCylinder,
+    createPlane,
+    createAxes,
+    createEllipsoid,
+    createRibbon,
+    createSheet,
+    createTube,
+    addMeasurement,
+    clearMeasurement } from './helpers/viewer';
 import { BasicCylinderProps } from "molstar/lib/mol-geo/geometry/mesh/builder/cylinder";
-import { SelectTarget, Target } from './helpers/selection';
+import {
+    lociToTargets,
+    normalizeTarget,
+    SelectBase,
+    SelectRange,
+    SelectTarget,
+    Target,
+    targetToExpression,
+    targetToLoci,
+    createResidueSelectionExpression,
+    getTargetsDistanceToPivot } from './helpers/selection';
 import { PluginStateObject } from 'molstar/lib/mol-plugin-state/objects';
 import { State } from 'molstar/lib/mol-state';
 import { DefaultPluginUISpec, PluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
@@ -61,6 +94,13 @@ import { wwPDBChemicalComponentDictionary } from 'molstar/lib/extensions/wwpdb/c
 import { ChemicalCompontentTrajectoryHierarchyPreset } from 'molstar/lib/extensions/wwpdb/ccd/representation';
 import { StateTransforms } from 'molstar/lib/mol-plugin-state/transforms';
 import { lociLabel } from 'molstar/lib/mol-theme/label';
+import { Loci } from 'molstar/lib/mol-model/loci';
+import { Color } from 'molstar/lib/mol-util/color';
+import { StructureSelection, QueryContext } from 'molstar/lib/mol-model/structure';
+import { compile } from 'molstar/lib/mol-script/runtime/query/base';
+import { EntitySubtype } from 'molstar/lib/mol-model/structure/model/properties/common';
+import { MmcifFormat } from 'molstar/lib/mol-model-formats/structure/mmcif';
+import { StructureSelectionQueries as Q } from 'molstar/lib/mol-plugin-state/helpers/structure-selection-query';
 
 /** package version, filled in at bundle build time */
 declare const __RCSB_MOLSTAR_VERSION__: string;
@@ -119,12 +159,22 @@ const DefaultViewerProps = {
     extensions: ObjectKeys(Extensions),
     layoutIsExpanded: false,
     layoutShowControls: true,
+    layoutShowRightPanel: true,
     layoutControlsDisplay: 'reactive' as PluginLayoutControlsDisplay,
     layoutShowSequence: true,
     layoutShowLog: false,
 
     viewportShowExpand: true,
+    viewportShowControls: true,
+    viewportShowSettings: true,
+    viewportShowScreenshotControls: true,
+    // when set to true, the viewport control for activating selection mode is displayed
     viewportShowSelectionMode: true,
+    viewportShowSelectionTools: true,
+    viewportShowTrajectoryControls: true,
+    // when set to true, selection mode is activated by default
+    behaviorSelectionModeActive: false,
+
     volumeStreamingServer: 'https://maps.rcsb.org/',
 
     backgroundColor: ColorNames.white,
@@ -135,6 +185,14 @@ const DefaultViewerProps = {
     config: [] as [PluginConfigItem, any][],
 };
 export type ViewerProps = typeof DefaultViewerProps & { canvas3d: PartialCanvas3DProps }
+
+type SelectionEventType = 'add' | 'remove' | 'clear';
+
+const COMPONENT_LABELS = ['Polymer', 'Ligand', 'Carbohydrate', 'Lipid', 'Ion', 'Water'];
+type ComponentLabelType = typeof COMPONENT_LABELS[number];
+function isComponentLabelType(label: string): label is ComponentLabelType {
+    return (COMPONENT_LABELS as readonly string[]).includes(label);
+}
 
 const LigandExtensions = {
     'wwpdb-chemical-component-dictionary': PluginSpec.Behavior(wwPDBChemicalComponentDictionary),
@@ -158,6 +216,7 @@ const DefaultLigandViewerProps = {
 
     viewportShowExpand: true,
     viewportShowSelectionMode: true,
+    viewportShowControls: true,
 
     backgroundColor: ColorNames.white,
     showWelcomeToast: true,
@@ -167,12 +226,14 @@ const DefaultLigandViewerProps = {
     shownCoordinateType: 'ideal' as const,
     aromaticBonds: false, // stylize aromatic rings
 };
+
 export type LigandViewerProps = typeof DefaultLigandViewerProps & { canvas3d: PartialCanvas3DProps }
 
 export class Viewer {
     private readonly _plugin: PluginUIContext;
     private readonly modelUrlProviders: ModelUrlProvider[];
     private prevExpanded: boolean;
+    private selectionRefs = new Map();
 
     constructor(elementOrId: string | HTMLElement, props: Partial<ViewerProps> = {}) {
         const element = typeof elementOrId === 'string' ? document.getElementById(elementOrId)! : elementOrId;
@@ -213,19 +274,26 @@ export class Viewer {
             },
             components: {
                 ...defaultSpec.components,
+                selectionTools: {
+                    controls: o.viewportShowSelectionTools ? undefined : () => undefined,
+                },
                 controls: {
                     ...defaultSpec.components?.controls,
                     top: o.layoutShowSequence ? undefined : 'none',
                     bottom: o.layoutShowLog ? undefined : 'none',
                     left: 'none',
-                    right: ControlsWrapper,
+                    right: o.layoutShowRightPanel ? ControlsWrapper : 'none',
                 },
                 remoteState: 'none',
             },
             config: [
                 [PluginConfig.Viewport.ShowExpand, o.viewportShowExpand],
+                [PluginConfig.Viewport.ShowControls, o.viewportShowControls],
+                [PluginConfig.Viewport.ShowSettings, o.viewportShowSettings],
+                [PluginConfig.Viewport.ShowScreenshotControls, o.viewportShowScreenshotControls],
                 [PluginConfig.Viewport.ShowSelectionMode, o.viewportShowSelectionMode],
                 [PluginConfig.Viewport.ShowAnimation, false],
+                [PluginConfig.Viewport.ShowTrajectoryControls, o.viewportShowTrajectoryControls],
                 [PluginConfig.VolumeStreaming.DefaultServer, o.volumeStreamingServer],
                 [PluginConfig.Download.DefaultPdbProvider, 'rcsb'],
                 [PluginConfig.Download.DefaultEmdbProvider, 'rcsb'],
@@ -298,6 +366,10 @@ export class Viewer {
 
                 this.prevExpanded = this._plugin.layout.state.isExpanded;
                 this._plugin.layout.events.updated.subscribe(() => this.toggleControls());
+
+                if (o.behaviorSelectionModeActive) {
+                    this._plugin.behaviors.interaction.selectionMode.next(true);
+                }
             });
     }
 
@@ -359,8 +431,12 @@ export class Viewer {
         return out;
     }
 
-    loadStructureFromUrl<P, S>(url: string, format: BuiltInTrajectoryFormat, isBinary: boolean, config?: {props?: PresetProps & { dataLabel?: string }; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
-        return this.customState.modelLoader.load({ fileOrUrl: url, format, isBinary }, config?.props, config?.matrix, config?.reprProvider, config?.params);
+    async loadStructureFromUrl<P, S>(url: string, format: BuiltInTrajectoryFormat, isBinary: boolean, config?: {props?: PresetProps & { dataLabel?: string }; matrix?: Mat4; reprProvider?: TrajectoryHierarchyPresetProvider<P, S>, params?: P}) {
+        try {
+            return await this.customState.modelLoader.load({ fileOrUrl: url, format, isBinary }, config?.props, config?.matrix, config?.reprProvider, config?.params);
+        } catch (e) {
+            throw new Error(`Failed to load ${url}. Error: ${e instanceof Error ? e.message : e}. The file may be in an unsupported format.`);
+        }
     }
 
     loadSnapshotFromUrl(url: string, type: PluginState.SnapshotType) {
@@ -401,6 +477,418 @@ export class Viewer {
         }
     }
 
+    /**
+     * Subscribes to a structural selection-related event in the plugin.
+     *
+     * This method allows clients to react to changes in structure selections,
+     * including when selections are added, removed, or cleared. The callback
+     * receives a `Target` object derived from the selection loci, except in
+     * the case of `clear-selection`, where no target is provided.
+     *
+     * @param {SelectionEventType} type - The type of selection event to subscribe to.
+     *        - `'add'`: Triggered when a new selection is added.
+     *        - `'remove'`: Triggered when a selection is removed.
+     *        - `'clear'`: Triggered when all selections are cleared.
+     *
+     * @param {(target?: Target) => void} callback - The function to call when the event occurs.
+     *        The callback receives a `Target` object for add/remove events,
+     *        and `undefined` for clear events.
+     *
+     * @returns {Subscription} A subscription object that can be used to unsubscribe later.
+     *
+     * @example
+     * // Subscribe to add selection events
+     * const subscription = viewer.subscribeToEvent('add', (target) => {
+     *     if (target) console.log('Selection added:', target);
+     * });
+     *
+     * // Unsubscribe when no longer needed
+     * subscription.unsubscribe();
+     */
+    subscribeToSelection(type: SelectionEventType, callback: (targets?: Target[]) => void): Subscription {
+        switch (type) {
+            case 'add':
+                return this.plugin.managers.structure.selection.events.loci.add.subscribe((loci) => {
+                    const granularity = this.plugin.managers.interactivity.props.granularity;
+                    const targets = lociToTargets(loci, granularity);
+                    if (targets)
+                        callback(targets);
+                });
+            case 'remove':
+                return this.plugin.managers.structure.selection.events.loci.remove.subscribe((loci) => {
+                    const granularity = this.plugin.managers.interactivity.props.granularity;
+                    const targets = lociToTargets(loci, granularity);
+                    if (targets)
+                        callback(targets);
+                });
+            case 'clear':
+                return this.plugin.managers.structure.selection.events.loci.clear.subscribe((_loci) => {
+                    callback();
+                });
+        }
+    };
+
+    /**
+     * This method updates the interactivity settings in the plugin's interactivity manager,
+     * specifically changing how fine or coarse the selection behavior should be (e.g., by atom, residue, chain, etc.).
+     *
+     * @param {Loci.Granularity} granularity - The desired level of selection granularity.
+     *        Common values might include:
+     *        - `element`: individual atoms
+     *        - `residue`: whole residues
+     *        - `chain`: entire chains
+     */
+    setSelectionGranularity(granularity: Loci.Granularity) {
+        this.plugin.managers.interactivity.setProps({ granularity: granularity });
+    }
+
+    /**
+    * Retrieves the list of assembly IDs for the default structure model,
+    * optionally filtered by matching entity types (`_entity_poly.type`)
+    * and/or the total number of modeled residues in the assembly.
+    *
+    * The default structure is obtained from the plugin state. For each
+    * biological assembly defined in the structure
+    * (`_pdbx_struct_assembly`), the assembly is built and evaluated.
+    *
+    * If `types` is provided, only assemblies containing entities with
+    * matching `_entity_poly.type` values are considered.
+    *
+    * If `maxLength` is provided, only assemblies whose total modeled residue
+    * count is less than or equal to `maxLength` are returned. Assemblies with
+    * zero matching residues are always excluded when filters are applied.
+    *
+    * If neither `types` nor `maxLength` is specified, all assembly IDs
+    * defined for the default model are returned without building assemblies.
+    *
+    * @param types Optional list of `_entity_poly.type` used to filter assemblies
+    *              (e.g. polypeptide(L), polyribonucleotide, peptide-like).
+    * @param maxLength Optional maximum allowed modeled residue count for an assembly.
+    *
+    * @returns {Promise<string[]>}
+    * An array of assembly ID strings. Returns an empty array if no default
+    * structure is available.
+    */
+    async getAssemblyIds(types?: EntitySubtype[], maxLength?: number): Promise<string[]> {
+        const m = getDefaultModel(this.plugin);
+        if (!m) return [];
+        return getAssemblyIdsFromModel(m, types, maxLength);
+    }
+
+    /**
+     * Determines the most appropriate biological assembly ID for a set of targets.
+     *
+     * The assembly ID is inferred by matching the provided targets against
+     * the `pdbx_struct_assembly_gen` category of the structure’s mmCIF data.
+     * Each target contributes a `(structOperId, labelAsymId)` pair, and the
+     * first assembly whose generation rules satisfy all such pairs is returned.
+     *
+     * @param targets
+     *   A list of targets (e.g., residues, chains) associated with the current
+     *   structure. Each target is expected to provide a `labelAsymId` and may
+     *   optionally provide a `structOperId` (defaulting to `'1'` if absent).
+     *
+     * @returns
+     *   The matching biological assembly ID, or `undefined` if no assemblies
+     *   are defined or if none satisfy all target constraints.
+     *
+     * @throws
+     *   An error if no default structure is available in the plugin, or if
+     *   the structure source data is not in mmCIF format.
+     *
+     * @remarks
+     * - Duplicate `(structOperId, labelAsymId)` pairs derived from the targets
+     *   are removed before matching.
+     */
+    determineAssemblyId(targets: Target[]): string | undefined {
+        const s = getDefaultStructure(this.plugin);
+        if (!s) throw new Error(`No default structure is available`);
+        if (!MmcifFormat.is(s.model.sourceData)) throw new Error(`Structure source data is not in mmCIF format`);
+
+        // set of provided [structOperId, labelAsymId] combinations
+        const ids = targets.map(t => [t.structOperId || '1', t.labelAsymId!]).filter((x, i, a) => a.indexOf(x) === i);
+
+        const { frame } = s.model.sourceData.data;
+        const pdbx_struct_assembly_gen = frame.categories.pdbx_struct_assembly_gen;
+        return firstMatchingAssemblyId(pdbx_struct_assembly_gen, ids);
+    }
+
+    /**
+     * Retrieves label and author asym ID pairs from the default structure model,
+     * optionally filtered by entity types (`_entity_poly.type`) and/or number of
+     * modeled residues in the chain.
+     *
+     * The default structure is obtained from the plugin state. Each returned pair
+     * corresponds to a single chain, where:
+     *  - the label asym ID identifies the chain within the structure model
+     *  - the author asym ID reflects the depositor-assigned chain identifier
+     *
+     * If `types` is provided, only chains containing entities with matching
+     * `_entity_poly.type` values are included.
+     *
+     * If `maxLength` is provided, only chains whose number of modeled residues
+     * is less than or equal to `maxLength` are returned. When filters are applied,
+     * chains with zero matching residues are excluded.
+     *
+     * If neither `types` nor `maxLength` is specified, all label/author asym ID pairs
+     * defined for the default model are returned without additional filtering.
+     *
+     * @param types Optional list of entity subtypes used to filter chains
+     *              (e.g. polypeptide(L), polyribonucleotide, peptide-like).
+     * @param maxLength Optional maximum allowed number of modeled residues per chain.
+     *
+     * @returns {string[][]}
+     * A 2D array of asym and author chain ID pairs in the form
+     * `[labelAsymId, authAsymId]`. Returns an empty array if no default structure
+     * is available.
+     */
+    getAsymIds(types?: EntitySubtype[], maxLength?: number): string[][] {
+        const m = getDefaultModel(this.plugin);
+        if (!m) return [];
+        return getAsymIdsFromStructureModel(m, types, maxLength);
+    }
+
+    /**
+     * Sets the current structure view based on the provided assembly ID.
+     *
+     * If an `assemblyId` is provided, the structure view is updated to show
+     * the corresponding assembly (as defined in `_pdbx_struct_assembly`).
+     * If no `assemblyId` is provided, the structure view is reverted to the default model view.
+     *
+     * This updates the plugin's structure hierarchy manager using the first loaded structure.
+     *
+     * @param {string | undefined} assemblyId - The assembly ID to display, or `undefined`
+     *         to display the model.
+     *
+     * @returns {Promise<void>} A promise that resolves once the structure view is updated.
+     */
+    setStructureView(assemblyId: string | undefined): Promise<void> {
+        if (assemblyId) {
+            return this.plugin.managers.structure.hierarchy.updateStructure(this.plugin.managers.structure.hierarchy.current.structures[0], {
+                type: {
+                    name: 'assembly',
+                    params: {
+                        id: assemblyId,
+                    }
+                }
+            });
+        } else {
+            return this.plugin.managers.structure.hierarchy.updateStructure(this.plugin.managers.structure.hierarchy.current.structures[0], {
+                type: {
+                    name: 'model'
+                }
+            });
+        }
+    }
+
+    /**
+     * Adds custom labels to specified targets within the current structure.
+     *
+     * This method iterates over an array of target objects, converts each target to a
+     * corresponding loci in the current structure, and then adds a label at that loci
+     * position using the structure measurement manager.
+     *
+     * The label text and appearance can be customized via the `config` parameter.
+     *
+     * @param targets - An array of Target objects to label on the structure.
+     *                  Each Target is expected to have `labelCompId` and `labelSeqId` properties.
+     * @param config - Configuration object specifying how labels should be rendered.
+     * @param config.text - A function that takes a `Target` and returns a `string` to be shown as the label.
+     *                      For example: `(t) => \`\${t.labelCompId} \${t.labelSeqId}\``.
+     * @param config.borderColor - Label border color, as a hex number (e.g., `0x555555`).
+     * @param config.textColor - Label text color, as a hex number (e.g., `0xB9B9B9`).
+     */
+    showLabels(targets: Target[], config: {
+        text: (t: Target) => string,
+        borderColor: number,
+        textColor: number
+    }) {
+        const structure = getDefaultStructure(this._plugin);
+        if (!structure) return;
+        for (const t of targets) {
+            const nt = normalizeTarget(t, structure);
+            const loci = targetToLoci(nt, structure);
+            this.plugin.managers.structure.measurement.addLabel(loci, {
+                labelParams: {
+                    customText: config.text(t),
+                    borderColor: Color(config.borderColor),
+                    textColor: Color(config.textColor)
+                }
+            });
+        }
+    }
+
+    /**
+     * Focuses the 3D viewer on a specific residue within the current structure.
+     *
+     * This function identifies the residue using either `authSeqId` or `labelSeqId` from the given `Target`,
+     * constructs a query to locate the corresponding atoms, and then adjusts the camera to focus on the selection.
+     *
+     * It combines sequence-based and chain-level constraints to ensure precise targeting, including the chain
+     * (`label_asym_id`) and operator (`operatorName`).
+     *
+     * @param target - A `Target` object specifying the residue to focus on. It must include:
+     *   - `labelAsymId`: the chain ID (label format),
+     *   - Either `structOperId` or `operatorName`: the operator applied to the chain,
+     *   - Either `authSeqId` or `labelSeqId` to locate the residue.
+     */
+    focusOnResidue(target: Target) {
+        const structure = getDefaultStructure(this.plugin);
+        if (!structure) return;
+        const expression = createResidueSelectionExpression(target, structure);
+        const query = compile<StructureSelection>(expression);
+        const selection = query(new QueryContext(structure));
+        const loci = StructureSelection.toLociWithSourceUnits(selection);
+        this.plugin.managers.structure.focus.setFromLoci(loci);
+        this.plugin.managers.camera.focusLoci(loci);
+    }
+
+    /**
+     * Selects all surrounding polymeric residues within a specified radius of a given target.
+     *
+     * The function:
+     * 1. Resolves the default structure from the plugin context.
+     * 2. Creates a residue-level selection expression for the given target.
+     * 3. Expands the selection to include all residues within the provided
+     *    radius (in Å), treating each residue as a whole.
+     * 4. Restricts the expanded selection to residues from polymeric chains only.
+     * 5. Executes the compiled query and adds the resulting loci to the
+     *    structure selection manager.
+     *
+     * If no default structure is available, the function returns without
+     * modifying the current selection.
+     *
+     * @param {Target} target
+     *   The target residue used as the center of the surroundings selection.
+     *
+     * @param {number} radius
+     *   The radius (in Å) within which surrounding residues are selected.
+     *
+     * @returns {void}
+     */
+    selectResidueSurroundings(target: Target, radius: number): void {
+        const structure = getDefaultStructure(this.plugin);
+        if (!structure) return;
+
+        const residue = createResidueSelectionExpression(target, structure);
+        // include all residues withing a given radius
+        const residuePlusSurroundings = MS.struct.modifier.includeSurroundings({
+            0: residue,
+            radius: radius,
+            'as-whole-residues': true
+        });
+        // include only residues from polymeric chains
+        const polymerResidues = MS.struct.modifier.intersectBy({
+            0: residuePlusSurroundings,
+            by: Q.polymer.expression
+        });
+
+        const query = compile<StructureSelection>(polymerResidues);
+        const selection = query(new QueryContext(structure));
+        const surroundingsLoci = StructureSelection.toLociWithSourceUnits(selection);
+        this.plugin.managers.structure.selection.fromLoci('add', surroundingsLoci);
+    }
+
+    /**
+     * Orders a list of targets by their spatial distance to a pivot target.
+     *
+     * The distance between the pivot and each target is computed using the
+     * currently loaded default structure. Targets are then sorted in ascending
+     * order of distance (closest first).
+     *
+     * @param {Target} pivot
+     *   The reference target from which distances are calculated.
+     *
+     * @param {Target[]} targets
+     *   The list of targets to be ordered by distance to the pivot.
+     *
+     * @returns {Target[] | undefined}
+     *   An array of targets sorted by increasing distance to the pivot, or
+     *   {@code undefined} if no default structure is available.
+     */
+    orderTargetsByDistanceToPivot(pivot: Target, targets: Target[]): Target[] | undefined {
+        const structure = getDefaultStructure(this.plugin);
+        if (!structure) return;
+        return getTargetsDistanceToPivot(pivot, targets, structure)
+            .sort((a, b) => a.distance - b.distance)
+            .map(a => a.target);
+    }
+
+    async setBallAndStick(target: Target | Target[], mode: 'on' | 'off') {
+
+        const s = getDefaultStructure(this.plugin);
+        if (!s) return;
+
+        const parent = this.plugin.helpers.substructureParent.get(s);
+        if (!parent || !parent.obj) return;
+
+        const state = this.plugin.state.data;
+        const builder = state.build();
+
+        const targets = Array.isArray(target) ? target : [target];
+        for (const t of targets) {
+            const label = `${t.labelAsymId} ${t.structOperId} ${t.labelSeqId}`;
+            if (mode === 'on') {
+                const exp = targetToExpression(t);
+                const selectionRef = builder
+                    .to(parent)
+                    .apply(StateTransforms.Model.StructureSelectionFromExpression,
+                        { expression: exp, label }, { tags: 'selected-residues' }).ref;
+                this.selectionRefs.set(label, selectionRef);
+                builder
+                    .to(selectionRef)
+                    .apply(StateTransforms.Representation.StructureRepresentation3D, {
+                        type: { name: 'ball-and-stick', params: {} },
+                        sizeTheme: { name: 'physical', params: {} }
+                    });
+            } else {
+                const transformRef = this.selectionRefs.get(label);
+                if (transformRef) {
+                    builder.delete(transformRef);
+                    this.selectionRefs.delete(transformRef);
+                }
+            }
+        }
+        await PluginCommands.State.Update(this.plugin, {
+            state,
+            tree: builder,
+            options: { doNotLogTiming: true, doNotUpdateCurrent: true }
+        });
+    }
+
+    /**
+     * Toggle visibility of structure component groups based on Mol*-assigned component labels.
+     *
+     * Component labels are assigned by Mol* at runtime and are not strongly typed.
+     * The {@link ComponentLabelType} union reflects the currently adopted Mol* label
+     * notation. Although these labels are not formally guaranteed by Mol*, they are
+     * considered stable and unlikely to change.
+     *
+     * Visibility is toggled only when a change is required, avoiding redundant state
+     * updates.
+     *
+     * @param {ComponentLabelType[]} labels
+     *   List of component labels whose visibility should be modified.
+     *
+     * @param {'on' | 'off'} mode
+     *   Desired visibility state:
+     *   - `'on'` shows components that are currently hidden
+     *   - `'off'` hides components that are currently visible
+     *
+     * @returns {void}
+    */
+    setVisibility(labels: ComponentLabelType[], mode: 'on' | 'off'): void {
+        for (const components of this.plugin.managers.structure.hierarchy.currentComponentGroups) {
+            const label = components[0].cell.obj?.label;
+            if (!label || !isComponentLabelType(label)) continue;
+            const isRequestedLabel = labels.includes(label);
+            const shouldToggle = mode === (components[0].cell.state.isHidden ? 'on' : 'off');
+            if (isRequestedLabel && shouldToggle) {
+                this.plugin.managers.structure.component.toggleVisibility(components);
+            }
+        }
+    }
+
     handleResize() {
         this._plugin.layout.events.updated.next(void 0);
     }
@@ -425,7 +913,7 @@ export class Viewer {
         select(this._plugin, targets, mode, modifier);
     }
 
-    clearSelection(mode: 'select' | 'hover', target?: { modelId: string; } & Target) {
+    clearSelection(mode: 'select' | 'hover', target?: Target) {
         clearSelection(this._plugin, mode, target);
     }
 

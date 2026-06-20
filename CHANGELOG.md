@@ -2,11 +2,53 @@
 
 [Semantic Versioning](https://semver.org/)
 
-## [2.11.3] - 2025-04-04
+## [2.14.3] - 2026-03-03
+### API
+- Allow to specify maximum allowed modeled residue count for an assembly or chain ID retrieval
+
+## [2.14.2] - 2026-01-16
+### API
+- Selects surrounding polymeric residues within a specified radius of a given target
+- Order a list of targets by their spatial distance to a pivot target
+
+## [2.14.1] - 2026-01-08
+### General
+- Update of RSCC statistics (RO-4900)
+
+## [2.14.0] - 2025-12-18
+### General
+- Default assembly preset
+- More configuration options for controls in the layout and viewport
+
+### API
+- Subscribe to a structural selection-related event in the plugin
+- Update the interactivity settings in the plugin's interactivity manager
+- Retrieve the list of assembly IDs for a default structure model
+- Retrieve asym and author chain IDs for a default structure model
+- Set the current structure view based on the provided assembly ID
+- Add custom labels to specified targets within the current structure
+- Focus on a specific residue within the current structure
+- Set ball and stick representation for a specific target
+- Determine the unknown assemblyId for a set of targets
+- Toggle visibility of structure component groups
+
+## [2.13.0] - 2025-09-29
+### General
+- Dependency update: Mol* to v5.0.0
+
+## [2.12.1] - 2025-05-21
+### General
+- Mol* dependency update
+
+## [2.12.0] - 2025-05-20
+### Improvements
+- IHM adjustments
+
+## [2.11.4] - 2025-04-04
 ### General
 - Better handling for motifs in assembly-less entries (RO-4624)
 
-## [2.11.2] - 2025-04-02
+## [2.11.3] - 2025-04-02
 ### General
 - Dependency updates
 - React 19 support
