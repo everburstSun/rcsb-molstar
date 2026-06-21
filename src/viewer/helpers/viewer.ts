@@ -4,8 +4,9 @@
  * @author Joan Segura <joan.segura@rcsb.org>
  */
 
+import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder';
 import { StructureRef } from 'molstar/lib/mol-plugin-state/manager/structure/hierarchy-state';
-import { Structure, StructureElement, StructureSymmetry } from 'molstar/lib/mol-model/structure/structure';
+import { Structure, StructureSymmetry } from 'molstar/lib/mol-model/structure/structure';
 import { PluginContext } from 'molstar/lib/mol-plugin/context';
 import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
 import { ColorName, ColorNames } from 'molstar/lib/mol-util/color/names';
@@ -18,8 +19,6 @@ import { StructureMeasurementManagerState } from 'molstar/lib/mol-plugin-state/m
 import { MeasurementType } from '../types';
 import {
     normalizeTarget,
-    rangeToTest,
-    SelectBase,
     SelectRange,
     SelectTarget,
     Target,
@@ -68,7 +67,7 @@ function analyzeTargets(targets: SelectTarget[]): Target[] {
 }
 
 export function setFocusFromTargets(plugin: PluginContext, targets: SelectTarget[], focus = false) {
-    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]);
+    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]?.modelId);
     if (!data) return;
 
     const analyzedTargets = analyzeTargets(targets);
@@ -96,14 +95,14 @@ export function setFocusFromRange(plugin: PluginContext, target: SelectRange) {
     plugin.managers.structure.focus.setFromLoci(loci);
 }
 
-function getStructureWithModelId(structures: StructureRef[], modelId: string): Structure | undefined {
+function getStructureWithModelId(structures: StructureRef[], modelId: string | undefined): Structure | undefined {
     if (!modelId) return undefined;
     
     const structureRef = getStructureRefWithModelId(structures, modelId);
     if (structureRef) return structureRef.cell?.obj?.data;
 }
 
-export function getStructureRefWithModelId(structures: StructureRef[], modelId: string): StructureRef | undefined {
+export function getStructureRefWithModelId(structures: StructureRef[], modelId: string | undefined): StructureRef | undefined {
     for (const structure of structures) {
         if (!structure.cell?.obj?.data?.units) continue;
 
@@ -116,7 +115,7 @@ export function select(plugin: PluginContext, targets: SelectTarget[], mode: 'se
     if (modifier === 'set')
         clearSelection(plugin, mode);
 
-    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]);
+    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]?.modelId);
     if (!data) return;
     const analyzedTargets = analyzeTargets(targets);
     const expression = targetsToExpression(analyzedTargets);
@@ -172,7 +171,7 @@ export function getCurrentFocus(plugin: PluginContext) {
 }
 
 export async function createComponent(plugin: PluginContext, componentLabel: string, targets: SelectTarget[]) {
-    const structureRef = getStructureRefWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]);
+    const structureRef = getStructureRefWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]?.modelId);
     if (!structureRef) throw Error('createComponent error: model not found');
 
     const analyzedTargets = analyzeTargets(targets);
@@ -378,7 +377,7 @@ export async function addMeasurement(plugin: PluginContext, targets: SelectTarge
         analyzedTargets.push(analyzeTargets(target));
     }); 
     const manager = plugin.managers.structure.measurement;
-    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0][0]);
+    const data = getStructureWithModelId(plugin.managers.structure.hierarchy.current.structures, targets[0]?.[0]?.modelId);
     if (!data) return;
     if (type === 'label') {
         const exp = targetsToExpression(analyzedTargets[0]);

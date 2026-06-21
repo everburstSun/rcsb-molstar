@@ -60,8 +60,8 @@ import { BasicCylinderProps } from "molstar/lib/mol-geo/geometry/mesh/builder/cy
 import {
     lociToTargets,
     normalizeTarget,
-    SelectBase,
-    SelectRange,
+    // SelectBase,
+    // SelectRange,
     SelectTarget,
     Target,
     targetToExpression,

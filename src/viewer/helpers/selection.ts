@@ -66,10 +66,10 @@ export type SelectBase = {
     readonly operatorName?: string
     readonly auth?: boolean
 }
-export type SelectSingle = Required<Pick<Target, 'labelAsymId' | 'labelSeqId'>> & Omit<Target, 'labelAsymId' | 'labelSeqId'>
+export type SelectSingle = Required<Pick<Target, 'labelAsymId' | 'labelSeqId'>> & Omit<Target, 'labelAsymId' | 'labelSeqId'> & SelectBase
 export type SelectRange = {
     readonly labelSeqRange: Range
-} & Required<Pick<Target, 'labelAsymId'>> & Omit<Target, 'labelAsymId'>;
+} & Required<Pick<Target, 'labelAsymId'>> & Omit<Target, 'labelAsymId'> & SelectBase;
 
 export type SelectTarget = SelectSingle | SelectRange;
 
@@ -304,103 +304,6 @@ export function targetToLoci(target: Target, structure: Structure): StructureEle
     const selection = query(new QueryContext(structure));
     return StructureSelection.toLociWithSourceUnits(selection);
 }
-
-function lociToResidueTargets(loci: StructureElement.Loci): Target[] {
-    const keys = new Set();
-    const targets: Target[] = [];
-    StructureElement.Loci.forEachLocation(loci, location => {
-        if (!Unit.isAtomic(location.unit)) return;
-        const label_asym_id = StructureProperties.chain.label_asym_id(location);
-        const auth_asym_id = StructureProperties.chain.auth_asym_id(location);
-        const label_seq_id = StructureProperties.residue.label_seq_id(location);
-        const auth_seq_id = StructureProperties.residue.auth_seq_id(location);
-        const label_comp_id = StructureProperties.atom.label_comp_id(location);
-        const struct_oper_list_ids = StructureProperties.unit.pdbx_struct_oper_list_ids(location);
-        const struct_oper_id = join(struct_oper_list_ids);
-        // canonical key string
-        const key = [label_asym_id, auth_asym_id, label_seq_id, auth_seq_id, label_comp_id, struct_oper_id].join('|');
-        if (!keys.has(key)) {
-            // Pushing only unique targets
-            keys.add(key);
-            targets.push({
-                labelAsymId: label_asym_id,
-                authAsymId: auth_asym_id,
-                labelSeqId: label_seq_id,
-                authSeqId: auth_seq_id,
-                labelCompId: label_comp_id,
-                structOperId: struct_oper_id
-            });
-        }
-    });
-    return targets;
-}
-
-function lociToChainTargets(loci: StructureElement.Loci): Target[] {
-    const keys = new Set();
-    const targets: Target[] = [];
-    StructureElement.Loci.forEachLocation(loci, location => {
-        if (!Unit.isAtomic(location.unit)) return;
-        const label_asym_id = StructureProperties.chain.label_asym_id(location);
-        const auth_asym_id = StructureProperties.chain.auth_asym_id(location);
-        // canonical key string
-        const key = [label_asym_id, auth_asym_id].join('|');
-        if (!keys.has(key)) {
-            // Pushing only unique targets
-            keys.add(key);
-            targets.push({
-                labelAsymId: label_asym_id,
-                authAsymId: auth_asym_id
-            });
-        }
-    });
-    return targets;
-}
-
-function lociToModelTargets(loci: StructureElement.Loci): Target[] {
-    const keys = new Set();
-    const targets: Target[] = [];
-    StructureElement.Loci.forEachLocation(loci, location => {
-        if (!Unit.isAtomic(location.unit)) return;
-        const modelId = location.structure.model.id;
-        if (!keys.has(modelId)) {
-            // Pushing only unique targets
-            keys.add(modelId);
-            targets.push({
-                modelId: modelId
-            });
-        }
-    });
-    return targets;
-}
-
-/**
- * Convert a StructureElement.Loci into a list of targets based on the
- * selected granularity.
- *
- * This function currently supports only the granularities required by the
- * Advanced Search UI (`residue`, `chain`, and `model`).
- *
- * If additional features or tools require other levels of granularity,
- * corresponding conversion functions must be implemented here. Unsupported
- * granularities will throw an error to prevent silent fallback behavior.
- *
- * @param loci - The loci representing the selected structure elements.
- * @param granularity - The target granularity requested for conversion.
- * @returns A list of converted targets.
- * @throws Error if the granularity is not implemented.
- */
-export function lociToTargets(loci: StructureElement.Loci, granularity: Loci.Granularity): Target[] {
-    switch (granularity) {
-        case 'residue':
-            return lociToResidueTargets(loci);
-        case 'chain':
-            return lociToChainTargets(loci);
-        case 'model':
-            return lociToModelTargets(loci);
-        default:
-            throw new Error(`Failed to return targets: granularity '${granularity}' is not supported`);
-    }
-};
 
 function lociToResidueTargets(loci: StructureElement.Loci): Target[] {
     const keys = new Set();
